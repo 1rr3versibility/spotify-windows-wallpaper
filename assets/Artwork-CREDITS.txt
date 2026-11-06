@@ -1,0 +1,14 @@
+Capri design and seated sprite: Capri Desktop (https://github.com/lachydotmcg/capri-desktop).
+Required Notice: Copyright 2026 Lachy (https://github.com/lachydotmcg)
+Required Notice: Anyone who uses Capri's code, art, animations or any of its other assets must credit the Capri project (https://github.com/lachydotmcg/capri-desktop). Capri's art and animations are by her artist, who prefers to stay private. Parts made by others keep their own licences, listed in its README.
+See Capri-LICENSE.md for the upstream noncommercial license.
+
+Talia Yang design: Cyberpunk: Edgerunners 2 (CD PROJEKT RED and TRIGGER).
+https://www.cyberpunk.net/en/edgerunners2
+https://cyberpunk.cdn.cdpr.app/cosplay-guides/TALIA_COSPLAY_GUIDE_EN.pdf
+
+The included animated cels were generated as redraws of key poses from these dance references.
+https://www.pinterest.com/pin/254734922667952986/
+https://www.pinterest.com/pin/840836192975426332/
+https://www.pinterest.com/pin/223420831503633390/
+https://www.pinterest.com/pin/218776494385743559/

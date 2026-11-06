@@ -1,0 +1,7 @@
+out/
+/TaliaPlayer.exe
+/TaliaSetup.exe
+/*.dll
+*.log
+*.pdb
+assets/wallpaper/modes/*.bak

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://i.scdn.co https://*.scdn.co https://mosaic.scdn.co https://image-cdn-ak.spotifycdn.com https://image-cdn-fa.spotifycdn.com https://*.spotifycdn.com data:; font-src 'self'; connect-src 'none'; media-src https://canvaz.scdn.co https://*.scdn.co; base-uri 'none'; form-action 'none'">
+<title>Talia · Spotify</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-character="talia">
+<div class="backdrop" aria-hidden="true">
+  <canvas id="fx"></canvas><div class="grain"></div>
+</div>
+
+<main class="stage">
+  <header class="bar">
+    <div class="brand"><span class="pulse"></span><span id="brand-name">Spotify</span></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="now">Плеер</button>
+      <button class="tab" data-view="playlists">Плейлисты</button>
+      <button class="tab" data-view="liked">Любимое</button>
+      <button class="tab" data-view="queue">Очередь</button>
+      <button class="tab" data-view="search">Поиск</button>
+    </nav>
+    <button class="dj" id="dj" title="Включить DJ">DJ</button>
+  </header>
+
+  <section class="view now active" data-view="now">
+    <div class="cover-wrap"><img id="cover" class="cover" alt=""><div class="cover-empty" id="cover-empty">♪</div><video id="canvas" class="canvas" muted loop playsinline preload="auto"></video></div>
+    <div class="meta">
+      <div class="eyebrow" id="eyebrow">Сейчас играет</div>
+      <h1 id="title">Spotify</h1>
+      <div class="artist" id="artist">Открой Spotify и включи музыку</div>
+      <div class="album" id="album"></div>
+      <button class="like big" id="like" title="Нравится"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-9.4-9.3C1.4 8 3.6 4.5 7.1 4.5c2 0 3.6 1.1 4.9 2.8 1.3-1.7 2.9-2.8 4.9-2.8 3.5 0 5.7 3.5 4.5 6.7-1.9 4.7-9.4 9.3-9.4 9.3z"/></svg><span id="like-label">В любимое</span></button>
+    </div>
+  </section>
+
+  <section class="view list-view" data-view="playlists">
+    <div class="list-head"><h2 id="playlists-title">Плейлисты</h2><button class="ghost" id="playlists-back" hidden>← Все плейлисты</button><button class="ghost accent" id="playlist-play" hidden>Играть плейлист</button></div>
+    <div class="scroller" id="playlist-home">
+      <h3 class="section">Миксы Spotify</h3>
+      <div class="grid mixes" id="mix-grid"></div>
+      <h3 class="section">Мои плейлисты</h3>
+      <div class="grid" id="playlist-grid"></div>
+    </div>
+    <div class="tracks" id="playlist-tracks" hidden></div>
+    <button class="ghost more" id="playlists-more" hidden>Показать ещё</button>
+  </section>
+
+  <section class="view list-view" data-view="liked">
+    <div class="list-head"><h2>Любимые треки</h2><button class="ghost accent" id="liked-play">Слушать все</button></div>
+    <div class="tracks" id="liked-tracks"></div>
+    <button class="ghost more" id="liked-more" hidden>Показать ещё</button>
+  </section>
+
+  <section class="view list-view" data-view="queue">
+    <div class="list-head"><h2>Очередь</h2></div>
+    <div class="tracks" id="queue-tracks"></div>
+  </section>
+
+  <section class="view list-view" data-view="search">
+    <button class="searchbar" id="searchbar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span id="search-text" class="placeholder">Что хочешь послушать?</span></button>
+    <div class="scroller" id="search-results"></div>
+  </section>
+
+  <section class="view list-view" data-view="detail">
+    <div class="list-head"><button class="ghost" id="detail-back">← Назад</button></div>
+    <div class="scroller" id="detail-body"></div>
+  </section>
+
+  <section class="setup" id="setup" hidden>
+    <h2>Подключи Spotify</h2>
+    <p id="setup-text">Запусти Spotify с расширением Spicetify, и обои оживут.</p>
+  </section>
+
+  <footer class="dock">
+    <div class="mini"><img id="mini-cover" alt=""><div><div id="mini-title">—</div><div id="mini-artist" class="dim"></div></div></div>
+    <div class="transport">
+      <div class="buttons">
+        <button class="icon" id="shuffle" title="Перемешать"><svg viewBox="0 0 24 24"><path d="M3 7h3.5c2 0 3.2 1 4.3 2.6l2.4 3.8c1.1 1.6 2.3 2.6 4.3 2.6H21M17 13l4 3-4 3M3 17h3.5c1.1 0 2-.3 2.7-.9M13.6 8.3c.8-.8 1.8-1.3 3.4-1.3H21M17 4l4 3-4 3"/></svg></button>
+        <button class="icon" id="previous" title="Назад"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
+        <button class="play" id="play" title="Играть"><svg viewBox="0 0 24 24" id="play-icon"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="icon" id="next" title="Дальше"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+        <button class="icon" id="repeat" title="Повтор"><svg viewBox="0 0 24 24"><path d="M4 11V9a3 3 0 0 1 3-3h12l-3-3M20 13v2a3 3 0 0 1-3 3H5l3 3"/></svg><span class="badge" id="repeat-one">1</span></button>
+      </div>
+      <div class="progress"><span id="elapsed">0:00</span><div class="track-bar" id="seek"><div class="fill" id="fill"></div><div class="knob" id="knob"></div><canvas id="stage-dancer"></canvas></div><span id="duration">0:00</span></div>
+    </div>
+    <div class="side">
+      <button class="like small" id="like-small" title="Нравится"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-9.4-9.3C1.4 8 3.6 4.5 7.1 4.5c2 0 3.6 1.1 4.9 2.8 1.3-1.7 2.9-2.8 4.9-2.8 3.5 0 5.7 3.5 4.5 6.7-1.9 4.7-9.4 9.3-9.4 9.3z"/></svg></button>
+      <svg class="vol-icon" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>
+      <div class="track-bar volume" id="volume"><div class="fill" id="volume-fill"></div></div>
+      <span id="volume-label" class="dim">—</span>
+    </div>
+  </footer>
+  <div class="toast" id="toast" hidden></div>
+</main>
+<script src="fx.js"></script>
+<script src="modes/base.js"></script>
+<script src="modes/part-01.js"></script>
+<script src="modes/part-02.js"></script>
+<script src="modes/part-03.js"></script>
+<script src="modes/part-04.js"></script>
+<script src="modes/part-05.js"></script>
+<script src="modes/part-06.js"></script>
+<script src="modes/part-07.js"></script>
+<script src="modes/part-08.js"></script>
+<script src="modes/part-09.js"></script>
+<script src="modes/part-10.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
