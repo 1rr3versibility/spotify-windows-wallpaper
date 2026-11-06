@@ -19,7 +19,7 @@ namespace CapriDesktop
         private readonly ContextMenuStrip menu = new ContextMenuStrip();
         private readonly ToolStripMenuItem talia, capri, hide, wallpaperItem, problemItem;
         private readonly SpicetifyBridge bridge;
-        private ToolStripMenuItem bridgeItem;
+        private ToolStripMenuItem bridgeItem, fullItem, halfItem, rate60Item, rate30Item;
         private readonly string assetsFolder;
         private readonly Func<bool?> appHearted = Tunes.Hearted;
         private readonly List<Wallpaper> wallpapers = new List<Wallpaper>();
@@ -43,7 +43,7 @@ namespace CapriDesktop
             Tunes.Hearted = Hearted;
             Wallpaper.AppHearted = appHearted;
             MainForm = player;
-            player.Text = "Talia · Spotify";
+            player.Text = "Spotify on Wallpaper";
             player.AccessibleName = "Мини-плеер Spotify";
             player.Motion = false;
             player.Command += Press;
@@ -72,6 +72,14 @@ namespace CapriDesktop
             problemItem = (ToolStripMenuItem)spice.DropDownItems.Add("", null, delegate { OpenJournal(); });
             menu.Items.Add(spice);
             wallpaperItem = (ToolStripMenuItem)menu.Items.Add("Обои рабочего стола", null, delegate { ToggleWallpaper(); });
+            var resolution = new ToolStripMenuItem("Разрешение фона");
+            fullItem = (ToolStripMenuItem)resolution.DropDownItems.Add("100 %", null, delegate { ChooseResolution(true); });
+            halfItem = (ToolStripMenuItem)resolution.DropDownItems.Add("50 %", null, delegate { ChooseResolution(false); });
+            menu.Items.Add(resolution);
+            var rate = new ToolStripMenuItem("Частота кадров");
+            rate60Item = (ToolStripMenuItem)rate.DropDownItems.Add("60", null, delegate { ChooseRate(false); });
+            rate30Item = (ToolStripMenuItem)rate.DropDownItems.Add("30", null, delegate { ChooseRate(true); });
+            menu.Items.Add(rate);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Закрыть плеер", null, delegate { player.Close(); });
             ThemeMenu(menu.Items);
@@ -161,7 +169,7 @@ namespace CapriDesktop
 
         private void OpenJournal()
         {
-            string file = Path.Combine(settings.Folder, "TaliaPlayer.log");
+            string file = Path.Combine(settings.Folder, "SpotifyOnWallpaper.log");
             if (File.Exists(file)) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file) { UseShellExecute = true });
         }
 
@@ -185,11 +193,31 @@ namespace CapriDesktop
             if (wallpapers.Count > 0) return;
             foreach (Screen screen in Screen.AllScreens)
             {
-                var paper = new Wallpaper(Path.Combine(assetsFolder, "wallpaper"), settings.Folder, () => settings.Character, screen);
+                var paper = new Wallpaper(Path.Combine(assetsFolder, "wallpaper"), settings.Folder, () => settings.Character, screen, settings.FullResolution ? 1f : 0.5f, settings.HalfRate ? 30 : 60);
                 paper.Lost += delegate { player.BeginInvoke(new Action(() => Recover(paper))); };
                 wallpapers.Add(paper);
                 paper.Show();
             }
+        }
+
+        private void ChooseResolution(bool full)
+        {
+            if (settings.FullResolution == full) return;
+            settings.FullResolution = full;
+            settings.Save();
+            if (wallpapers.Count == 0) return;
+            CloseWallpapers();
+            ShowWallpaper();
+        }
+
+        private void ChooseRate(bool half)
+        {
+            if (settings.HalfRate == half) return;
+            settings.HalfRate = half;
+            settings.Save();
+            if (wallpapers.Count == 0) return;
+            CloseWallpapers();
+            ShowWallpaper();
         }
 
         private void CloseWallpapers()
@@ -233,6 +261,10 @@ namespace CapriDesktop
             capri.Checked = settings.Character == "capri";
             hide.Checked = settings.Character == "none";
             wallpaperItem.Checked = wallpapers.Count > 0;
+            fullItem.Checked = settings.FullResolution;
+            halfItem.Checked = !settings.FullResolution;
+            rate60Item.Checked = !settings.HalfRate;
+            rate30Item.Checked = settings.HalfRate;
             problemItem.Text = Journal.Last == null ? "" : "Последняя ошибка: " + Journal.Last;
             problemItem.Visible = problemItem.Text.Length > 0;
             bridgeItem.Text = bridge.Connected ? "Подключено к Spotify" + (string.IsNullOrEmpty(bridge.Version) ? "" : " (Spicetify " + bridge.Version + ")")
@@ -466,8 +498,12 @@ namespace CapriDesktop
         internal string Dance = "01-jump";
         internal Point? Spot;
         internal bool Wallpaper;
+        internal bool FullResolution;
+        internal bool HalfRate;
+        private string RateFile { get { return Path.Combine(Folder, "wallpaper-fps.txt"); } }
         internal string Folder { get { return Path.GetDirectoryName(file); } }
         private string WallpaperFile { get { return Path.Combine(Folder, "wallpaper.txt"); } }
+        private string ResolutionFile { get { return Path.Combine(Folder, "wallpaper-resolution.txt"); } }
 
         internal PlayerOptions(string file)
         {
@@ -475,6 +511,8 @@ namespace CapriDesktop
             try
             {
                 Wallpaper = File.Exists(WallpaperFile) && File.ReadAllText(WallpaperFile).Trim() == "on";
+                FullResolution = File.Exists(ResolutionFile) && File.ReadAllText(ResolutionFile).Trim() == "100";
+                HalfRate = File.Exists(RateFile) && File.ReadAllText(RateFile).Trim() == "30";
                 if (!File.Exists(file)) return;
                 string[] lines = File.ReadAllLines(file);
                 if (lines.Length >= 1 && (lines[0] == "talia" || lines[0] == "capri" || lines[0] == "none")) Character = lines[0];
@@ -492,6 +530,8 @@ namespace CapriDesktop
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(file));
                 File.WriteAllText(WallpaperFile, Wallpaper ? "on" : "off");
+                File.WriteAllText(ResolutionFile, FullResolution ? "100" : "50");
+                File.WriteAllText(RateFile, HalfRate ? "30" : "60");
                 string[] lines = Spot.HasValue ? new[] { Character, Dance, Spot.Value.X.ToString(), Spot.Value.Y.ToString() }
                     : new[] { Character, Dance };
                 string temp = file + ".tmp";

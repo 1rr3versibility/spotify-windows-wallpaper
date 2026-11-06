@@ -13,10 +13,10 @@ if ($WindowsMetadata) { & (Join-Path $root 'build.ps1') -WindowsMetadata $Window
 $stage = Join-Path $out 'setup-stage'
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage | Out-Null
-Copy-Item -LiteralPath (Join-Path $out 'TaliaPlayer.exe') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $out 'SpotifyOnWallpaper.exe') -Destination $stage
 Get-ChildItem -LiteralPath $out -Filter '*.dll' -File | Copy-Item -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'assets') -Destination (Join-Path $stage 'assets') -Recurse
-foreach ($dev in @('assets\wallpaper\sheet.html', 'assets\wallpaper\sheet.js')) {
+foreach ($dev in @('assets\wallpaper\sheet.html', 'assets\wallpaper\sheet.js', 'assets\wallpaper\refrender.html', 'assets\wallpaper\refrender.js')) {
     $path = Join-Path $stage $dev
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
 }
@@ -33,7 +33,7 @@ if (Test-Path -LiteralPath $appZip) { Remove-Item -LiteralPath $appZip -Force }
 $spicetifyZip = Join-Path $root 'lib\spicetify\spicetify-2.46.4-windows-x64.zip'
 if (-not (Test-Path -LiteralPath $spicetifyZip)) { throw "Missing $spicetifyZip" }
 
-$setup = Join-Path $out 'TaliaSetup.exe'
+$setup = Join-Path $out 'SpotifyOnWallpaperSetup.exe'
 $options = @('/nologo', '/langversion:5', '/target:winexe', '/platform:anycpu', '/optimize+', '/utf8output', '/warn:4', "/out:$setup",
     ('/win32manifest:' + (Join-Path $root 'installer\setup.manifest')))
 $icon = Join-Path $root 'assets\talia.ico'
@@ -43,6 +43,6 @@ $references = @('System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.W
 $resources = @("/resource:$appZip,Talia.App.zip", "/resource:$spicetifyZip,Talia.Spicetify.zip")
 $sources = @((Join-Path $root 'installer\Setup.cs'), (Join-Path $root 'src\SpicetifyInstaller.cs'))
 & $compiler ($options + $references + $resources + $sources)
-if ($LASTEXITCODE -ne 0) { throw "TaliaSetup compilation failed with exit code $LASTEXITCODE." }
+if ($LASTEXITCODE -ne 0) { throw "SpotifyOnWallpaperSetup compilation failed with exit code $LASTEXITCODE." }
 Remove-Item -LiteralPath $appZip -Force
 Write-Output $setup

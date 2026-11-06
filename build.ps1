@@ -31,7 +31,7 @@ $WindowsMetadata = (Resolve-Path -LiteralPath $WindowsMetadata).Path
 
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -Path $output -ItemType Directory -Force | Out-Null
-$exe = Join-Path $output 'TaliaPlayer.exe'
+$exe = Join-Path $output 'SpotifyOnWallpaper.exe'
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' -File -Recurse | ForEach-Object { $_.FullName })
 $references = @(
     'System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.Windows.Forms.dll',
@@ -64,7 +64,7 @@ $options = @('/nologo', '/langversion:5', '/target:winexe', '/platform:anycpu', 
 $icon = Join-Path $assetDirectory 'talia.ico'
 if (Test-Path -LiteralPath $icon) { $options += '/win32icon:' + (Resolve-Path -LiteralPath $icon).Path }
 & $compiler ($options + $references + $resources + $sources)
-if ($LASTEXITCODE -ne 0) { throw "TaliaPlayer compilation failed with exit code $LASTEXITCODE." }
+if ($LASTEXITCODE -ne 0) { throw "SpotifyOnWallpaper compilation failed with exit code $LASTEXITCODE." }
 foreach ($library in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'lib\webview2') -Filter '*.dll' -File) {
     Copy-Item -LiteralPath $library.FullName -Destination $output -Force
 }

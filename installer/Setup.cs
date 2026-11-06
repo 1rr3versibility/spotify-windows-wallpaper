@@ -15,10 +15,12 @@ namespace CapriDesktop
 {
     internal static class Setup
     {
-        internal const string Product = "Talia Spotify Player";
+        internal const string Product = "Spotify on Wallpaper";
         internal const string Version = "1.0.0";
-        internal const string AppKey = "TaliaSpotifyPlayer";
-        internal static readonly string InstallDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TaliaPlayer");
+        internal const string AppKey = "SpotifyOnWallpaper";
+        internal const string ExeName = "SpotifyOnWallpaper.exe";
+        internal const string SetupName = "SpotifyOnWallpaperSetup.exe";
+        internal static readonly string InstallDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "SpotifyOnWallpaper");
         internal static readonly string SettingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TaliaSpotifyMiniPlayer");
         internal static readonly string StartMenuLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), Product + ".lnk");
         internal static readonly string DesktopLink = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), Product + ".lnk");
@@ -126,11 +128,12 @@ namespace CapriDesktop
 
         internal static void StopPlayer()
         {
-            foreach (Process process in Process.GetProcessesByName("TaliaPlayer"))
-            {
-                try { process.Kill(); process.WaitForExit(5000); }
-                catch (Exception) { }
-            }
+            foreach (string name in new[] { "SpotifyOnWallpaper", "TaliaPlayer" })
+                foreach (Process process in Process.GetProcessesByName(name))
+                {
+                    try { process.Kill(); process.WaitForExit(5000); }
+                    catch (Exception) { }
+                }
         }
 
         internal static void Register(string exe, string setup, long sizeKb)
@@ -139,7 +142,7 @@ namespace CapriDesktop
             {
                 key.SetValue("DisplayName", Product);
                 key.SetValue("DisplayVersion", Version);
-                key.SetValue("Publisher", "Talia");
+                key.SetValue("Publisher", Product);
                 key.SetValue("DisplayIcon", exe + ",0");
                 key.SetValue("InstallLocation", InstallDir);
                 key.SetValue("UninstallString", "\"" + setup + "\" /uninstall");
@@ -155,6 +158,32 @@ namespace CapriDesktop
             {
                 if (on) run.SetValue(AppKey, "\"" + exe + "\"");
                 else if (run.GetValue(AppKey) != null) run.DeleteValue(AppKey);
+            }
+        }
+
+        internal static void RemoveLegacy(Action<string> say)
+        {
+            const string oldProduct = "Talia Spotify Player", oldKey = "TaliaSpotifyPlayer";
+            string oldDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "TaliaPlayer");
+            string[] oldLinks =
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), oldProduct + ".lnk"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), oldProduct + ".lnk")
+            };
+            bool found = Directory.Exists(oldDir);
+            foreach (string link in oldLinks) if (File.Exists(link)) { File.Delete(link); found = true; }
+            using (RegistryKey run = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+                if (run.GetValue(oldKey) != null) { run.DeleteValue(oldKey); found = true; }
+            using (RegistryKey old = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + oldKey))
+                if (old != null) found = true;
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + oldKey, false);
+            if (!found) return;
+            say("Убираю прежнюю версию Talia Spotify Player…");
+            if (Directory.Exists(oldDir))
+            {
+                try { Directory.Delete(oldDir, true); }
+                catch (IOException error) { say("  папку " + oldDir + " удалить не вышло: " + error.Message); }
+                catch (UnauthorizedAccessException error) { say("  папку " + oldDir + " удалить не вышло: " + error.Message); }
             }
         }
 
@@ -188,18 +217,18 @@ namespace CapriDesktop
             Font = new Font("Segoe UI", 10f);
             try { Icon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location); } catch (Exception) { }
 
-            var title = new Label { Text = uninstall ? "Удалить Talia" : "Talia · Spotify", Font = new Font("Segoe UI Semibold", 18f), AutoSize = true, Location = new Point(24, 18) };
+            var title = new Label { Text = uninstall ? "Удалить " + Setup.Product : Setup.Product, Font = new Font("Segoe UI Semibold", 18f), AutoSize = true, Location = new Point(24, 18) };
             Controls.Add(title);
             int y = 72;
             if (uninstall)
             {
-                AddCheck(restore, "Убрать расширение Talia из Spotify", true, ref y);
+                AddCheck(restore, "Убрать расширение плеера из Spotify", true, ref y);
                 AddCheck(spicetify, "Полностью вернуть Spotify без Spicetify (spicetify restore)", false, ref y);
                 AddCheck(settings, "Удалить настройки плеера", false, ref y);
             }
             else
             {
-                AddCheck(spicetify, "Установить Spicetify и подключить расширение Talia к Spotify", true, ref y);
+                AddCheck(spicetify, "Установить Spicetify и подключить расширение плеера к Spotify", true, ref y);
                 AddCheck(wallpaper, "Включить живые обои рабочего стола", true, ref y);
                 AddCheck(desktop, "Ярлык на рабочем столе", true, ref y);
                 AddCheck(autostart, "Запускать вместе с Windows", true, ref y);
@@ -298,10 +327,11 @@ namespace CapriDesktop
 
         private void Install(bool withSpicetify, bool withDesktop, bool withAutostart, bool withWallpaper)
         {
-            string exe = Path.Combine(Setup.InstallDir, "TaliaPlayer.exe");
-            string setupCopy = Path.Combine(Setup.InstallDir, "TaliaSetup.exe");
+            string exe = Path.Combine(Setup.InstallDir, Setup.ExeName);
+            string setupCopy = Path.Combine(Setup.InstallDir, Setup.SetupName);
             Say("Закрываю плеер, если он запущен…");
             Setup.StopPlayer();
+            Setup.RemoveLegacy(Say);
             Say("Копирую файлы плеера в " + Setup.InstallDir);
             Directory.CreateDirectory(Setup.InstallDir);
             Setup.ExtractApp(Setup.InstallDir, Say);
@@ -324,7 +354,7 @@ namespace CapriDesktop
                 Setup.AddToUserPath(SpicetifyInstaller.DefaultFolder);
             }
             else Say("Spicetify уже стоит: " + cli);
-            Say("Подключаю расширение Talia к Spotify (Spotify перезапустится)…");
+            Say("Подключаю расширение плеера к Spotify (Spotify перезапустится)…");
             try { Say(SpicetifyInstaller.Install(Path.Combine(Setup.InstallDir, "assets"), token)); }
             catch (Exception error)
             {
@@ -340,7 +370,7 @@ namespace CapriDesktop
             if (fullRestore) { Say("Возвращаю Spotify без Spicetify…"); try { Say(SpicetifyInstaller.Restore()); } catch (Exception error) { Say("spicetify restore: " + error.Message); } }
             else if (removeExtension)
             {
-                Say("Убираю расширение Talia из Spotify…");
+                Say("Убираю расширение плеера из Spotify…");
                 try
                 {
                     string cli = SpicetifyInstaller.FindCli();
@@ -376,14 +406,14 @@ namespace CapriDesktop
                 return;
             }
             finished = true;
-            Say(uninstall ? "Talia удалена." : "Готово.");
+            Say(uninstall ? Setup.Product + " удалён." : "Готово.");
             go.Enabled = true;
             go.Text = uninstall ? "Закрыть" : "Запустить";
         }
 
         private void Launch()
         {
-            string exe = Path.Combine(Setup.InstallDir, "TaliaPlayer.exe");
+            string exe = Path.Combine(Setup.InstallDir, Setup.ExeName);
             if (File.Exists(exe)) Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true, WorkingDirectory = Setup.InstallDir });
         }
     }

@@ -146,6 +146,11 @@ h1 { margin: 0; font-size: clamp(40px, 5.2vh, 86px); line-height: 1.12; padding-
 .buttons { position: relative; z-index: 3; }
 .buttons .icon, .buttons .play { position: relative; }
 #fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+*, *::before, *::after { cursor: default !important; }
+img, a { -webkit-user-drag: none; }
+html.native-fx, html.native-fx body, html.native-fx .backdrop { background: transparent; }
+html.native-fx #fx { display: none; }
+html.native-fx .cover-wrap { transition: none; }
 #stage-dancer { position: absolute; pointer-events: none; opacity: 0; transition: opacity .45s ease; filter: drop-shadow(0 4px 8px rgb(0 0 0 / .45)); z-index: 2; }
 #stage-dancer.on { opacity: 1; }
 .knob { transition: opacity .3s ease; }

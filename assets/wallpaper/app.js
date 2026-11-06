@@ -13,6 +13,9 @@ if (bridge) {
     if (reply && reply.searchDone) return $("searchbar").classList.remove("typing");
     if (reply && reply.characterChanged) return refreshCharacter();
     if (reply && reply.wheel) return scrollAt(reply.wheel[0], reply.wheel[1], reply.wheel[2]);
+    if (reply && reply.canvasShown) return nativeCanvasShown(reply.canvasShown);
+    if (reply && reply.canvasFailed) return nativeCanvasFailed(reply.canvasFailed);
+    if (reply && reply.nativeFxFailed) return nativeFxFailed(reply.nativeFxFailed);
     const waiter = pending.get(reply.id);
     if (!waiter) return;
     pending.delete(reply.id);
@@ -96,6 +99,8 @@ async function boot() {
   document.body.dataset.character = info.character || "talia";
   $("brand-name").textContent = info.character === "capri" ? "CAPRI · SPOTIFY" : "Talia · Spotify";
   state.connected = !!info.connected;
+  if (info.nativeFx) { Fx.native = true; document.documentElement.classList.add("native-fx"); }
+  if (info.fps) Pulse.fps = info.fps;
   $("setup").hidden = state.connected;
   if (!info.configured) $("setup-text").textContent = "Spicetify не установлен. Поставь Talia через установщик или открой меню плеера ☰ → «Spicetify» → «Установить расширение в Spotify».";
   else if (!info.connected) $("setup-text").textContent = "Запусти Spotify. Если он запущен, а обои пустые, открой меню плеера ☰ → «Spicetify» → «Переприменить после обновления Spotify».";
@@ -138,7 +143,7 @@ function render() {
   const repeat = p ? p.repeat_state : "off";
   $("repeat").classList.toggle("on", repeat !== "off");
   $("repeat").classList.toggle("one", repeat === "track");
-  if (p && p.device) {
+  if (p && p.device && !state.volumeDrag && performance.now() > (state.volumeHold || 0)) {
     const v = p.device.volume_percent;
     $("volume-fill").style.width = (v || 0) + "%";
     $("volume-label").textContent = v == null ? "—" : v + "%";
@@ -227,7 +232,59 @@ function sampleCanvas() {
   catch (error) { console.warn("canvas palette failed", error); clearInterval(canvasSampler); canvasSampler = 0; }
 }
 
+const NativeCanvas = { url: null, failed: new Set() };
+
 function setCanvas(url) {
+  if (url && !/canvaz\.scdn\.co|\.mp4(\?|$)/i.test(url)) url = null;
+  const native =!!(Fx.native && url && !NativeCanvas.failed.has(url));
+  setNativeCanvas(native ? url : null);
+  setVideoCanvas(native ? null : url);
+}
+
+function setNativeCanvas(url) {
+  if (NativeCanvas.url === url) return;
+  const hadNative = !!NativeCanvas.url;
+  NativeCanvas.url = url;
+  Fx.sentAt = 0;
+  if (!hadNative) return;
+  $("canvas").parentElement.classList.remove("has-canvas");
+  if (!url && state.coverUrl) paint(state.coverUrl);
+}
+
+function nativeCanvasShown(info) {
+  if (!info || info.url !== NativeCanvas.url || !info.w || !info.h) return;
+  const wrap = $("canvas").parentElement;
+  wrap.style.setProperty("--ratio", (info.w / info.h).toFixed(4));
+  wrap.classList.add("has-canvas");
+  Fx.sentAt = 0;
+}
+
+function nativeCanvasFailed(info) {
+  if (!info || !info.url) return;
+  console.warn("native canvas failed, falling back to page video", info.url, info.reason);
+  NativeCanvas.failed.add(info.url);
+  if (NativeCanvas.url === info.url) setCanvas(info.url);
+}
+
+function nativeFxFailed(reason) {
+  console.warn("native background failed, back to WebGL", reason);
+  Fx.native = false;
+  document.documentElement.classList.remove("native-fx");
+  const url = NativeCanvas.url;
+  NativeCanvas.url = null;
+  if (url) { $("canvas").parentElement.classList.remove("has-canvas"); setCanvas(url); }
+}
+
+function coverRect() {
+  const wrap = $("canvas").parentElement;
+  if (!NativeCanvas.url || !wrap.offsetParent) return [0, 0, 0, 0, 0];
+  const box = wrap.getBoundingClientRect();
+  if (!box.width || !box.height) return [0, 0, 0, 0, 0];
+  const dpr = window.devicePixelRatio || 1;
+  return [box.left * dpr, box.top * dpr, box.width * dpr, box.height * dpr, 22 * dpr].map((v) => Math.round(v * 100) / 100);
+}
+
+function setVideoCanvas(url) {
   const video = $("canvas");
   if ((video.dataset.src || null) === (url || null)) return;
   video.dataset.src = url || "";
@@ -311,8 +368,10 @@ function palette(img) {
   g.drawImage(img, 0, 0, size, size);
   const pixels = g.getImageData(0, 0, size, size).data;
   const bins = new Map();
+  let black = 0;
   for (let i = 0; i < pixels.length; i += 4) {
     const r = pixels[i], gr = pixels[i + 1], b = pixels[i + 2];
+    if (Math.max(r, gr, b) < 40) black++;
     const key = (r >> 5) * 64 + (gr >> 5) * 8 + (b >> 5);
     const bin = bins.get(key) || { n: 0, r: 0, g: 0, b: 0 };
     bin.n++; bin.r += r; bin.g += gr; bin.b += b;
@@ -329,14 +388,23 @@ function palette(img) {
     if (picked.every((p) => distance(p, s.c) > 70)) picked.push(s.c);
     if (picked.length === 3) break;
   }
-  while (picked.length < 3) picked.push(picked.length ? rotate(picked[0], picked.length * 60) : [255, 154, 187]);
-  return picked.map(lift);
+  if (!picked.length) picked.push([255, 154, 187]);
+  const lifted = picked.map(lift);
+  const base = lifted.reduce((best, c) => (hsl(c)[1] > hsl(best)[1] ? c : best), lifted[0]);
+  const shades = [[18, 0.09], [-18, -0.07]];
+  for (let i = 0; lifted.length < 3; i++) lifted.push(shade(base, shades[i][0], shades[i][1]));
+  lifted.dark = black / (size * size);
+  return lifted;
 }
 
 function distance(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
 function lift(c) {
   const [h, s, l] = hsl(c);
   return rgb(h, Math.min(.68, s), Math.max(.28, Math.min(.42, l)));
+}
+function shade(c, degrees, lightness) {
+  const [h, s, l] = hsl(c);
+  return rgb((h + degrees + 360) % 360, s, Math.max(0.22, Math.min(0.5, l + lightness)));
 }
 function rotate(c, degrees) {
   const [h, s, l] = hsl(c);
@@ -362,6 +430,7 @@ function fromText(text) {
   return [rgb(h, .7, .62), rgb((h + 70) % 360, .65, .58), rgb((h + 200) % 360, .5, .45)];
 }
 function applyPalette(colors) {
+  Fx.darkTarget = colors.dark || 0;
   const root = document.documentElement.style;
   colors.forEach((c, i) => root.setProperty("--c" + (i + 1), "rgb(" + c.join(" ") + ")"));
 }
@@ -592,6 +661,30 @@ function barPosition(bar, event) {
   return Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
 }
 
+function dragBar(bar, update) {
+  let active = false;
+  const move = (event) => {
+    if (!active) return;
+    if (!(event.buttons & 1)) return finish(event);
+    update(barPosition(bar, event), false);
+  };
+  const finish = (event) => {
+    if (!active) return;
+    active = false;
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", finish);
+    update(barPosition(bar, event), true);
+  };
+  bar.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    active = true;
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", finish);
+    update(barPosition(bar, event), false);
+  });
+}
+
 function wire() {
   document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => showView(t.dataset.view); });
   $("play").onclick = () => act(state.playback && state.playback.is_playing ? "pause" : "play", {});
@@ -612,22 +705,36 @@ function wire() {
   $("playlists-more").onclick = () => state.openPlaylist ? openPlaylist(state.openPlaylist.list, true) : loadPlaylists(false);
   $("playlists-back").onclick = closePlaylist;
   $("playlist-play").onclick = () => state.openPlaylist && act("play", { context: state.openPlaylist.list.uri });
-  $("seek").onclick = (event) => {
+  dragBar($("seek"), (share, done) => {
     const p = state.playback;
     if (!p || !p.item) return;
-    const ms = Math.round(barPosition($("seek"), event) * p.item.duration_ms);
+    const ms = Math.round(share * p.item.duration_ms);
+    state.seeking = !done;
+    const fill = share * 100 + "%";
+    $("fill").style.width = fill;
+    $("knob").style.left = fill;
+    $("elapsed").textContent = clock(ms);
+    if (!done) return;
     p.progress_ms = ms;
     state.fetchedAt = performance.now();
     tick();
     act("seek", { ms });
-  };
-  $("volume").onclick = (event) => {
-    const percent = Math.round(barPosition($("volume"), event) * 100);
+  });
+  dragBar($("volume"), (share, done) => {
+    const percent = Math.round(share * 100);
+    state.volumeDrag = !done;
     $("volume-fill").style.width = percent + "%";
     $("volume-label").textContent = percent + "%";
-    act("volume", { percent });
-  };
+    if (state.playback && state.playback.device) state.playback.device.volume_percent = percent;
+    const now = performance.now();
+    if (done) state.volumeHold = now + 1500;
+    if (done || now - (state.volumeSentAt || 0) > 120) {
+      state.volumeSentAt = now;
+      act("volume", { percent });
+    }
+  });
   document.addEventListener("contextmenu", (event) => event.preventDefault());
+  document.addEventListener("dragstart", (event) => event.preventDefault());
 }
 
 const Demo = {
@@ -925,7 +1032,7 @@ const Fx = {
   mode: "000-blobs",
   modeAt: 0,
   track: null,
-  scale: 1,
+  scale: 0.5,
   hits: [-100, -100, -100],
   beats: [-100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100, -100],
   colors: [[1, .6, .73], [.52, .87, .92], [.52, .42, .75]],
@@ -971,6 +1078,10 @@ const Fx = {
     const next = this.list[Math.floor(seeded("fx|" + uri)() * this.list.length)].id;
     if (next !== this.mode) this.modeAt = performance.now();
     this.mode = next;
+    const styles = (window.TaliaAccent && window.TaliaAccent.names.length) || 1;
+    this.accent = Math.floor(seeded("accent|" + uri)() * styles);
+    const chosen = this.list.find((m) => m.id === next);
+    this.accentGain = chosen && chosen.glsl.indexOf("uBeats") >= 0 ? 0.45 : 1;
     document.body.dataset.fx = this.mode;
     this.release();
   },
@@ -1003,8 +1114,31 @@ const Fx = {
     const box = cover && cover.offsetParent ? cover.getBoundingClientRect() : null;
     if (box && box.width) this.center = [(box.left + box.width / 2) / innerWidth, 1 - (box.top + box.height / 2) / innerHeight, box.width / 2 / innerHeight];
   },
+  native: false,
+  dark: 0,
+  darkTarget: 0,
+  darkAt: 0,
+  accent: 0,
+  accentGain: 1,
+  sentAt: 0,
+  sent: "",
+  sendNative(now) {
+    if (now - this.sentAt < (NativeCanvas.url ? 100 : 250)) return;
+    this.sentAt = now;
+    this.readColors(now);
+    this.readCenter(now);
+    const payload = { colors: [].concat(...this.colors), center: this.center, mode: this.mode, accent: [this.accent, this.accentGain], dark: [this.darkTarget], video: NativeCanvas.url, rect: coverRect() };
+    const text = JSON.stringify(payload);
+    if (text === this.sent || !bridge) return;
+    this.sent = text;
+    bridge.postMessage({ fx: payload });
+  },
   frame(n, now) {
+    if (this.native) return this.sendNative(now);
     if (!this.gl) return;
+    const step = this.darkAt ? Math.min(0.1, (now - this.darkAt) / 1000) : 0;
+    this.darkAt = now;
+    this.dark += (this.darkTarget - this.dark) * (1 - Math.exp(-step / 0.5));
     this.readColors(now);
     this.readCenter(now);
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
@@ -1016,6 +1150,9 @@ const Fx = {
       time: Date.now() / 1000 % 10000,
       fade: Math.min(1, (now - this.modeAt) / 1500),
       star: this.starClock,
+      accent: this.accent,
+      accentGain: this.accentGain,
+      dark: this.dark,
       colors: this.colors,
       center: this.center,
       hits: this.hits,
@@ -1204,12 +1341,14 @@ const Pulse = {
   frame() {
     requestAnimationFrame(() => this.frame());
     const clock = performance.now();
-    if (clock - this.last < 1000 / 60 - 2) return;
+    if (clock - this.last < 1000 / (this.fps || 60) - 2) return;
+    const dt = this.last ? Math.min(0.1, (clock - this.last) / 1000) : 0;
     this.last = clock;
     if (clock - this.lastFeed > 600) this.target = { bass: 0, mid: 0, high: 0, level: 0 };
     const n = this.now, t = this.target;
-    for (const key of ["bass", "mid", "high", "level"]) n[key] += (t[key] - n[key]) * (t[key] > n[key] ? .35 : .08);
-    document.querySelector(".brand .pulse").style.scale = 1 + n.bass * .8;
+    const rise = 1 - Math.exp(-dt / 0.08), fall = 1 - Math.exp(-dt / 0.3);
+    for (const key of ["bass", "mid", "high", "level"]) n[key] += (t[key] - n[key]) * (t[key] > n[key] ? rise : fall);
+    if (!Fx.native) document.querySelector(".brand .pulse").style.scale = 1 + n.bass * .8;
     Fx.frame(n, clock);
     Stage.frame();
   },

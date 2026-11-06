@@ -56,6 +56,13 @@ namespace CapriDesktop
 
         internal double StateAgeMs { get { return (DateTime.UtcNow - stateAt).TotalMilliseconds; } }
 
+        internal void Remember(string fresh)
+        {
+            if (string.IsNullOrEmpty(fresh)) return;
+            state = fresh;
+            stateAt = DateTime.UtcNow;
+        }
+
         internal void Start()
         {
             if (listeners.Count > 0) return;

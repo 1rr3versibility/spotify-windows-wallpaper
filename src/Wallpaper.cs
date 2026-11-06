@@ -21,7 +21,10 @@ namespace CapriDesktop
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 64 * 1024 * 1024 };
         private readonly string pages, dataFolder;
         private readonly Func<string> character;
-        private readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(19, 21, 33) };
+        private readonly float nativeScale;
+        private readonly int frameRate;
+        private readonly WebView2 web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.Transparent };
+        private NativeFx nativeFx;
         private readonly Desktop.MouseRelay relay;
         private static readonly object pulseGate = new object();
         private static readonly List<Wallpaper> listeners = new List<Wallpaper>();
@@ -40,6 +43,7 @@ namespace CapriDesktop
         }
 
         private readonly Rectangle screenBounds, workArea;
+        private readonly string screenName;
         private readonly System.Windows.Forms.Timer coverWatch = new System.Windows.Forms.Timer { Interval = 1000 };
         private volatile bool covered;
 
@@ -50,15 +54,18 @@ namespace CapriDesktop
             "enqueue", "queue", "playlists", "playlist", "liked", "search", "search-tracks", "artist", "artist-albums", "album", "mixes"
         };
 
-        internal Wallpaper(string pagesFolder, string dataFolder, Func<string> character, Screen screen)
+        internal Wallpaper(string pagesFolder, string dataFolder, Func<string> character, Screen screen, float scale, int fps)
         {
+            nativeScale = scale;
+            frameRate = fps;
             screenBounds = screen.Bounds;
+            screenName = screen.DeviceName;
             workArea = screen.WorkingArea;
             coverWatch.Tick += delegate { CheckCovered(); };
             pages = pagesFolder;
             this.dataFolder = dataFolder;
             this.character = character;
-            Text = "Talia · Spotify wallpaper";
+            Text = "Spotify on Wallpaper";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -75,7 +82,7 @@ namespace CapriDesktop
             get
             {
                 CreateParams p = base.CreateParams;
-                p.ExStyle = (p.ExStyle | 0x00000080 | 0x08000000) & ~0x00040000;
+                p.ExStyle = (p.ExStyle | 0x00000080 | 0x08000000 | 0x00200000) & ~0x00040000;
                 return p;
             }
         }
@@ -94,7 +101,7 @@ namespace CapriDesktop
             {
                 if (closing || IsDisposed) return;
                 Journal.Write("Обои", error);
-                MessageBox.Show("Обои не запустились: " + error.Message, "Talia · Spotify", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Обои не запустились: " + error.Message, "Spotify on Wallpaper", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 Close();
             }
         }
@@ -116,8 +123,12 @@ namespace CapriDesktop
             core.NewWindowRequested += (s, a) => a.Handled = true;
             core.WebMessageReceived += Received;
             core.NavigationCompleted += (s, a) => { Loaded = a.IsSuccess; };
-            core.Navigate("https://" + Host + "/" + Path.GetFileName(pages) + "/index.html");
             Attach();
+            nativeFx = new NativeFx(Handle, ClientSize.Width, ClientSize.Height, nativeScale, NativeFx.RefreshOf(screenName), frameRate, Path.Combine(pages, "modes"),
+                reason => PostFromAnyThread("{\"nativeFxFailed\":" + Json.Serialize(reason) + "}"),
+                (url, w, h) => PostFromAnyThread("{\"canvasShown\":{\"url\":" + Json.Serialize(url) + ",\"w\":" + w + ",\"h\":" + h + "}}"),
+                (url, reason) => PostFromAnyThread("{\"canvasFailed\":{\"url\":" + Json.Serialize(url) + ",\"reason\":" + Json.Serialize(reason) + "}}"));
+            core.Navigate("https://" + Host + "/" + Path.GetFileName(pages) + "/index.html");
             relay.Start();
             Listen(this);
             coverWatch.Start();
@@ -159,10 +170,13 @@ namespace CapriDesktop
             if (now == covered) return;
             covered = now;
             web.Visible = !now;
+            if (nativeFx != null) nativeFx.Paused = now;
         }
 
         private void Pulse(AudioPulse.Beat beat)
         {
+            NativeFx fx = nativeFx;
+            if (fx != null) fx.Feed(beat.Bass, beat.Mid, beat.High, beat.Level, beat.Hit);
             if (closing || IsDisposed || !IsHandleCreated || covered) return;
             var c = System.Globalization.CultureInfo.InvariantCulture;
             string message = "{\"pulse\":[" + beat.Bass.ToString("0.###", c) + "," + beat.Mid.ToString("0.###", c) + "," + beat.High.ToString("0.###", c) + "," +
@@ -225,6 +239,20 @@ namespace CapriDesktop
                 Journal.Write("Сообщение от страницы обоев", error);
                 return;
             }
+            object fxState;
+            if (message.TryGetValue("fx", out fxState))
+            {
+                var fields = fxState as Dictionary<string, object>;
+                if (nativeFx != null && fields != null)
+                {
+                    object modeId, videoUrl;
+                    fields.TryGetValue("mode", out modeId);
+                    nativeFx.SetPalette(Floats(fields, "colors"), Floats(fields, "center"), modeId as string, Floats(fields, "accent"), Floats(fields, "dark"));
+                    fields.TryGetValue("video", out videoUrl);
+                    nativeFx.SetVideo(videoUrl as string, Floats(fields, "rect"));
+                }
+                return;
+            }
             object id, op, args;
             message.TryGetValue("id", out id);
             message.TryGetValue("op", out op);
@@ -250,6 +278,23 @@ namespace CapriDesktop
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
+        private void PostFromAnyThread(string json)
+        {
+            if (closing || IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke((Action)delegate { Post(json); }); }
+            catch (InvalidOperationException) { }
+        }
+
+        private static float[] Floats(Dictionary<string, object> a, string key)
+        {
+            object value;
+            var list = a.TryGetValue(key, out value) ? value as System.Collections.ArrayList : null;
+            if (list == null) return null;
+            var result = new float[list.Count];
+            for (int i = 0; i < list.Count; i++) result[i] = Convert.ToSingle(list[i], System.Globalization.CultureInfo.InvariantCulture);
+            return result;
+        }
+
         internal async Task Snapshot(string path)
         {
             using (var file = File.Create(path)) await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, file);
@@ -261,7 +306,7 @@ namespace CapriDesktop
             bool viaApp = bridge != null && bridge.Connected;
             if (op == "status")
                 return new Reply { Status = 200, Body = Json.Serialize(new Dictionary<string, object>
-                    { { "configured", SpicetifyInstaller.FindCli() != null }, { "connected", viaApp }, { "character", character() }, { "problem", null }, { "source", "spicetify" } }) };
+                    { { "configured", SpicetifyInstaller.FindCli() != null }, { "connected", viaApp }, { "character", character() }, { "problem", null }, { "source", "spicetify" }, { "nativeFx", nativeFx != null && !nativeFx.Broken }, { "fps", frameRate } }) };
             if (op == "search-input")
             {
                 double scale = Num(a, "scale");
@@ -313,16 +358,24 @@ namespace CapriDesktop
             }
         }
 
+        private static long liveStateUntil;
+        private static readonly HashSet<string> Mutating = new HashSet<string>
+        {
+            "play", "resume", "pause", "next", "previous", "seek", "volume", "shuffle", "repeat", "dj", "liked-play", "like", "unlike", "enqueue"
+        };
+
         private Reply AnswerFromApp(SpicetifyBridge bridge, string op, Dictionary<string, object> a)
         {
             try
             {
                 if (op == "state")
                 {
-                    string state = bridge.State ?? bridge.CallSync("state", null);
+                    bool live = DateTime.UtcNow.Ticks < Interlocked.Read(ref liveStateUntil) || bridge.State == null;
+                    string state = live ? bridge.CallSync("state", null) : bridge.State;
+                    if (live) bridge.Remember(state);
                     var data = Json.Deserialize<Dictionary<string, object>>(state);
                     object playing, progress;
-                    if (data != null && data.TryGetValue("is_playing", out playing) && playing is bool && (bool)playing && data.TryGetValue("progress_ms", out progress) && progress != null)
+                    if (!live && data != null && data.TryGetValue("is_playing", out playing) && playing is bool && (bool)playing && data.TryGetValue("progress_ms", out progress) && progress != null)
                         data["progress_ms"] = Convert.ToDouble(progress, System.Globalization.CultureInfo.InvariantCulture) + bridge.StateAgeMs;
                     if (data != null) data["cover_data"] = SessionCover();
                     return new Reply { Status = 200, Body = Json.Serialize(data) };
@@ -331,7 +384,9 @@ namespace CapriDesktop
                 var args = new Dictionary<string, object>(a);
                 if (op == "play" && args.Count == 0) op = "resume";
                 bool slow = op == "search" || op == "artist" || op == "album" || op == "playlists" || op == "liked" || op == "playlist" || op == "mixes";
-                return new Reply { Status = 200, Body = bridge.CallSync(op, args, slow ? 15000 : 8000) };
+                string body = bridge.CallSync(op, args, slow ? 15000 : 8000);
+                if (Mutating.Contains(op)) Interlocked.Exchange(ref liveStateUntil, DateTime.UtcNow.AddSeconds(4).Ticks);
+                return new Reply { Status = 200, Body = body };
             }
             catch (Exception error)
             {
@@ -417,6 +472,7 @@ namespace CapriDesktop
                 coverWatch.Dispose();
                 relay.Dispose();
                 Unlisten(this);
+                if (nativeFx != null) nativeFx.Dispose();
                 if (searchBox != null && !searchBox.IsDisposed) searchBox.Dispose();
                 web.Dispose();
             }
@@ -646,6 +702,11 @@ namespace CapriDesktop
                             continue;
                         }
                         if (motion.Message == 0x0200 && queue.Count > 0) continue;
+                        if (motion.Message == 0x0200 && forwardedDown)
+                        {
+                            Forward(0x0200, motion.Point, 1);
+                            continue;
+                        }
                         if (!area.Contains(motion.Point.X, motion.Point.Y)) continue;
                         if (!OnDesktop(motion.Point)) continue;
                         if (motion.Message == 0x020A)
@@ -685,7 +746,8 @@ namespace CapriDesktop
                 POINT client = screen;
                 ScreenToClient(widget, ref client);
                 IntPtr lp = new IntPtr((client.Y << 16) | (client.X & 0xFFFF));
-                PostMessage(widget, (uint)message, new IntPtr(message == 0x0201 ? 1 : 0), lp);
+                int buttons = message == 0x0201 || (message == 0x0200 && wheel == 1) ? 1 : 0;
+                PostMessage(widget, (uint)message, new IntPtr(buttons), lp);
             }
 
             public void Dispose()

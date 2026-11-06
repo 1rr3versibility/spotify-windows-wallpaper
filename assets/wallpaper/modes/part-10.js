@@ -9,35 +9,27 @@ float m100_f(vec2 p) {
   return v / 0.875;
 }
 vec4 modeLayer(Ctx c) {
-  float e = 0.006;
-  float amp = 1.0 + c.bass * 0.35;
-  vec2 o = vec2(c.t * 0.025, -c.t * 0.018);
-  vec2 q = c.p * 1.4 + o;
+  float e = 0.004;
+  vec2 o = vec2(c.t * 0.008, -c.t * 0.006);
+  vec2 q = c.p * 1.2 + o;
   float f0 = m100_f(q);
-  float n0 = noise(q);
-  vec2 gn = vec2(noise(q + vec2(e, 0.0)) - n0, noise(q + vec2(0.0, e)) - n0) / e * 1.4 * 0.5 / 0.875;
-  float b0 = 0.0, db = 0.0;
+  vec2 g = vec2(m100_f(q + vec2(e, 0.0)) - f0, m100_f(q + vec2(0.0, e)) - f0) / e * 1.2;
+  float pulse = 0.0;
   for (int i = 0; i < 8; i++) {
     float age = c.t - uBeats[i];
-    if (age < 0.0 || age > 12.0) continue;
-    float r = c.coverR + age * 0.22, w = 0.07 + age * 0.02;
-    float k = ring(c.dc, r, w) * 0.07 * exp(-age * 0.25);
-    b0 += k;
-    db += k * -2.0 * (c.dc - r) / (w * w);
+    if (age < 0.0 || age > 6.0) continue;
+    pulse += ring(c.dc, c.coverR + age * 0.3, 0.1 + age * 0.03) * exp(-age * 0.6) * smoothstep(0.0, 0.15, age);
   }
-  vec2 rad = (c.p - c.cc) / max(c.dc, 0.0001);
-  float h = f0 * amp + b0;
-  vec2 g = gn * amp * 1.3 + rad * db;
-  float levels = 18.0;
-  float v = h * levels;
+  float levels = 14.0;
+  float v = f0 * levels;
   float idx = floor(v + 0.5);
   float dist = abs(fract(v + 0.5) - 0.5) / max(length(g) * levels, 0.001);
-  float major = step(mod(idx, 5.0), 0.5);
-  float l = line(dist, (0.9 + major * 0.9) * c.px) + 0.22 * line(dist, 5.0 * c.px);
+  float major = step(mod(idx, 4.0), 0.5);
+  float l = line(dist, (1.1 + major * 0.8) * c.px) + 0.28 * line(dist, 6.0 * c.px);
   vec3 tint = palette3(c.c1, c.c2, c.c3, idx * 0.07);
-  float b = 0.2 + major * 0.2 + c.high * 0.22;
-  float band = smoothstep(0.55, 0.8, h) * 0.05;
-  return vec4(mix(tint, vec3(1.0), 0.22) * (l * b + band), 0.1);
+  float b = 0.15 + major * 0.15 + c.level * 0.08 + min(pulse, 1.2) * 0.35;
+  float band = smoothstep(0.55, 0.8, f0) * 0.04;
+  return vec4(mix(tint, vec3(1.0), 0.2 + min(pulse, 1.0) * 0.2) * (l * b + band), 0.1);
 }
 `,
   },

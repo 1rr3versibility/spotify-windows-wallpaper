@@ -4,7 +4,7 @@ const FxShader = {
   header: `
 precision highp float;
 uniform vec2 uRes;
-uniform float uTime, uFade, uStar;
+uniform float uTime, uFade, uStar, uAccent, uAccentGain, uDark;
 uniform vec3 uC1, uC2, uC3, uCenter, uHits;
 uniform vec4 uAudio;
 uniform float uBeats[16];
@@ -79,8 +79,8 @@ void main() {
   vec2 cc = vec2(uCenter.x * aspect, uCenter.y);
   float dc = length(p - cc);
   col = screen(col, mix(c1, c2, 0.5) * exp(-dc * dc / 0.14) * bass * 0.22);
-  float a0 = t - uHits.x;
-  col = screen(col, mix(c2, vec3(1.0), 0.35) * (ring(dc, uCenter.z + a0 * 0.6, 0.05) * 0.18 + ring(dc, uCenter.z + a0 * 0.6, 0.012) * 0.22) * max(0.0, 1.0 - a0 / 1.6));
+  col = mix(col, vec3(0.01, 0.01, 0.014), smoothstep(0.45, 0.85, uDark) * 0.85);
+  col = screen(col, beatAccent(uAccent, p, cc, dc, uCenter.z, aspect, px, t, c1, c2, c3) * uAccentGain);
   Ctx c;
   c.uv = uv; c.p = p; c.aspect = aspect; c.px = px; c.t = t;
   c.bass = bass; c.mid = mid; c.high = high; c.level = level;
@@ -95,7 +95,7 @@ void main() {
 }
 `,
   vertex: `attribute vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }`,
-  uniforms: ["uRes", "uTime", "uFade", "uStar", "uC1", "uC2", "uC3", "uCenter", "uHits", "uAudio", "uBeats[0]"],
+  uniforms: ["uRes", "uTime", "uFade", "uStar", "uAccent", "uAccentGain", "uDark", "uC1", "uC2", "uC3", "uCenter", "uHits", "uAudio", "uBeats[0]"],
 };
 
 function fxModes() {
@@ -117,7 +117,7 @@ function fxCompile(gl, glsl) {
     return s;
   };
   const vs = shader(gl.VERTEX_SHADER, FxShader.vertex);
-  const fs = shader(gl.FRAGMENT_SHADER, FxShader.header + "\n" + glsl + "\n" + FxShader.main);
+  const fs = shader(gl.FRAGMENT_SHADER, FxShader.header + "\n" + window.TaliaAccent.glsl + "\n" + glsl + "\n" + FxShader.main);
   const program = gl.createProgram();
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
@@ -146,6 +146,9 @@ function fxDraw(gl, compiled, values) {
   gl.uniform1f(u.uTime, values.time);
   gl.uniform1f(u.uFade, values.fade);
   gl.uniform1f(u.uStar, values.star);
+  gl.uniform1f(u.uAccent, values.accent || 0);
+  gl.uniform1f(u.uAccentGain, values.accentGain == null ? 1 : values.accentGain);
+  gl.uniform1f(u.uDark, values.dark || 0);
   gl.uniform3fv(u.uC1, values.colors[0]);
   gl.uniform3fv(u.uC2, values.colors[1]);
   gl.uniform3fv(u.uC3, values.colors[2]);

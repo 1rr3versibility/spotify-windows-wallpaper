@@ -1,6 +1,8 @@
 out/
 /TaliaPlayer.exe
+/SpotifyOnWallpaper.exe
 /TaliaSetup.exe
+/SpotifyOnWallpaperSetup.exe
 /*.dll
 *.log
 *.pdb

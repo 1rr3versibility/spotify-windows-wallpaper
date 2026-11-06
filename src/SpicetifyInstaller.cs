@@ -35,7 +35,7 @@ namespace CapriDesktop
         {
             string cli = FindCli();
             if (cli == null)
-                throw new FileNotFoundException("Spicetify не установлен. Переустанови Talia через TaliaSetup.exe, он ставит Spicetify сам.");
+                throw new FileNotFoundException("Spicetify не установлен. Переустанови Spotify on Wallpaper через SpotifyOnWallpaperSetup.exe, он ставит Spicetify сам.");
             var log = new StringBuilder();
             int code;
             string userdata = Run(cli, "path userdata", 30, log, out code).Trim();

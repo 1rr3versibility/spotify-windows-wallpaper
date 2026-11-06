@@ -19,6 +19,26 @@ namespace CapriDesktop
         [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
         private static extern int WindowStyle(IntPtr window, int index);
 
+        private static int AudioProbe(string output, int seconds)
+        {
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            var lines = new List<string> { "ms\traw_bass\tlong_bass\tscaled_bass\tbass_out\traw_level\tlong_level\tlevel_out\thit" };
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var gate = new object();
+            using (var pulse = new AudioPulse(beat =>
+            {
+                lock (gate)
+                    lines.Add(watch.ElapsedMilliseconds + "\t" + beat.RawBass.ToString("E3", c) + "\t" + beat.LongBass.ToString("E3", c) + "\t" + beat.ScaledBass.ToString("0.000", c) + "\t" +
+                        beat.Bass.ToString("0.000", c) + "\t" + beat.RawLevel.ToString("E3", c) + "\t" + beat.LongLevel.ToString("E3", c) + "\t" + beat.Level.ToString("0.000", c) + "\t" + (beat.Hit ? "1" : "0"));
+            }))
+            {
+                pulse.Start();
+                Thread.Sleep(seconds * 1000);
+            }
+            lock (gate) File.WriteAllLines(output, lines);
+            return 0;
+        }
+
         [STAThread]
         private static int Main(string[] args)
         {
@@ -27,6 +47,8 @@ namespace CapriDesktop
             Application.SetCompatibleTextRenderingDefault(false);
             string assets = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets");
             if (args.Length == 2 && args[0] == "--smoke") return Smoke(assets, Path.GetFullPath(args[1]));
+            if (args.Length == 3 && args[0] == "--audioprobe") return AudioProbe(Path.GetFullPath(args[1]), int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture));
+            if (args.Length >= 2 && (args[0] == "--modecompile" || args[0] == "--modecheck" || args[0] == "--modebench" || args[0] == "--accentsheet")) return FxTools.Run(assets, args);
             if (args.Length == 2 && args[0] == "--bridgedump")
             {
                 string folder = Path.GetFullPath(args[1]);
@@ -128,7 +150,7 @@ namespace CapriDesktop
                 }
                 catch (Exception error)
                 {
-                    MessageBox.Show(error.Message, "Talia · Spotify", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(error.Message, "Spotify on Wallpaper", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }
             }
@@ -244,7 +266,7 @@ namespace CapriDesktop
                     SavePreview(player, dancer, Path.Combine(output, "perched.png"));
                     results.Add("PASS both characters, all dance clips, pause and hide");
                 }
-                using (var paper = new Wallpaper(Path.Combine(assets, "wallpaper"), output, () => "capri", Screen.PrimaryScreen))
+                using (var paper = new Wallpaper(Path.Combine(assets, "wallpaper"), output, () => "capri", Screen.PrimaryScreen, 0.5f, 60))
                 {
                     paper.Show();
                     DateTime until = DateTime.UtcNow.AddSeconds(20);

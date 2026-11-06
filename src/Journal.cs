@@ -13,7 +13,7 @@ namespace CapriDesktop
         internal static void Open(string folder)
         {
             Directory.CreateDirectory(folder);
-            file = Path.Combine(folder, "TaliaPlayer.log");
+            file = Path.Combine(folder, "SpotifyOnWallpaper.log");
             if (File.Exists(file) && new FileInfo(file).Length > 2 * 1024 * 1024) File.Delete(file);
         }
 

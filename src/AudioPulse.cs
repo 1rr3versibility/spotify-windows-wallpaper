@@ -10,6 +10,7 @@ namespace CapriDesktop
         {
             internal float Bass, Mid, High, Level;
             internal bool Hit;
+            internal float RawBass, RawLevel, LongBass, LongLevel, ScaledBass;
         }
 
         private const int Size = 1024;
@@ -24,7 +25,8 @@ namespace CapriDesktop
         private Thread worker;
         private volatile bool stopping;
         private int written, sampleRate = 48000;
-        private float bassPeak = 1e-4f, midPeak = 1e-4f, highPeak = 1e-4f, levelPeak = 1e-4f, bassAverage, lastBass;
+        private float bassLong, midLong, highLong, levelLong, levelFast, bassFast, bassRecent, lastBass;
+        private bool adapting;
         private float bassOut, midOut, highOut, levelOut;
         private DateTime lastHit = DateTime.MinValue;
 
@@ -168,12 +170,22 @@ namespace CapriDesktop
             float bass = Band(30, 150, binHz), mid = Band(150, 2000, binHz), high = Band(2000, 12000, binHz);
             float level = bass * .5f + mid * .35f + high * .15f;
 
-            bassPeak = Math.Max(bass, bassPeak * .9985f);
-            midPeak = Math.Max(mid, midPeak * .9985f);
-            highPeak = Math.Max(high, highPeak * .9985f);
-            levelPeak = Math.Max(level, levelPeak * .9985f);
-            bool quiet = level < 2e-4f;
-            float b = quiet ? 0 : bass / bassPeak, m = quiet ? 0 : mid / midPeak, h = quiet ? 0 : high / highPeak, l = quiet ? 0 : level / levelPeak;
+            bool quiet = level < 1e-7f;
+            if (!quiet)
+            {
+                levelFast = Track(levelFast, level, .2f);
+                bassFast = Track(bassFast, bass, .2f);
+                float ratio = levelLong > 0 ? levelFast / levelLong : 1f;
+                if (ratio < .4f || ratio > 2.5f) adapting = true;
+                else if (ratio > .8f && ratio < 1.25f) adapting = false;
+                float rate = levelLong <= 0 || adapting ? .25f : .022f;
+                bassLong = Track(bassLong, bass, rate);
+                midLong = Track(midLong, mid, rate);
+                highLong = Track(highLong, high, rate);
+                levelLong = Track(levelLong, level, rate);
+                if (adapting) bassRecent = Track(bassRecent, bassFast, .25f);
+            }
+            float b = quiet ? 0 : Scale(bass, bassLong, 2.4f), m = quiet ? 0 : Scale(mid, midLong, 2f), h = quiet ? 0 : Scale(high, highLong, 2f), l = quiet ? 0 : Scale(level, levelLong, 1.8f);
 
             bassOut = Smooth(bassOut, b, .55f, .12f);
             midOut = Smooth(midOut, m, .4f, .1f);
@@ -181,21 +193,34 @@ namespace CapriDesktop
             levelOut = Smooth(levelOut, l, .3f, .05f);
 
             bool hit = false;
-            float rise = b - lastBass;
-            if (!quiet && b > .55f && b > bassAverage * 1.3f && rise > .12f && (now - lastHit).TotalMilliseconds > 280)
+            if (!quiet && bassRecent > 0 && bass > bassRecent * 1.45f && bass > lastBass * 1.12f && (now - lastHit).TotalMilliseconds > 280)
             {
                 hit = true;
                 lastHit = now;
             }
-            bassAverage = bassAverage * .93f + b * .07f;
-            lastBass = b;
-            listener(new Beat { Bass = bassOut, Mid = midOut, High = highOut, Level = levelOut, Hit = hit });
+            if (!quiet)
+            {
+                bassRecent = Track(bassRecent, bass, .065f);
+                lastBass = bass;
+            }
+            listener(new Beat { Bass = bassOut, Mid = midOut, High = highOut, Level = levelOut, Hit = hit, RawBass = bass, RawLevel = level, LongBass = bassLong, LongLevel = levelLong, ScaledBass = b });
         }
 
         private void Silence()
         {
             bassOut = midOut = highOut = levelOut = 0;
             listener(new Beat());
+        }
+
+        private static float Track(float average, float value, float rate)
+        {
+            if (average <= 0) return value;
+            return average + (value - average) * rate;
+        }
+
+        private static float Scale(float value, float average, float headroom)
+        {
+            return Math.Min(1f, value / Math.Max(average * headroom, 1e-9f));
         }
 
         private static float Smooth(float current, float target, float attack, float release)
