@@ -23,13 +23,14 @@ cbuffer U : register(b0)
 {
     float2 uRes; float uTime; float uFade;
     float uStar; float uAccent; float uAccentGain; float uDark;
-    float3 uC1; float uPad1;
-    float3 uC2; float uPad2;
+    float3 uC1; float uBackdrop;
+    float3 uC2; float uBackdropAspect;
     float3 uC3; float uPad3;
     float3 uCenter; float uPad4;
     float3 uHits; float uPad5;
     float4 uAudio;
     float4 uBeatsV[4];
+    float4 uBackdropRect; float uBackdropRadius; float3 uPad6;
 };
 static const float TAU = 6.28318530718;
 static const float PI = 3.14159265359;
@@ -75,6 +76,27 @@ float3 palette3(float3 a, float3 b, float3 c, float x)
     x = frac(x) * 3.0;
     return x < 1.0 ? lerp(a, b, smoothstep(0.0, 1.0, x)) : (x < 2.0 ? lerp(b, c, smoothstep(1.0, 2.0, x)) : lerp(c, a, smoothstep(2.0, 3.0, x)));
 }
+Texture2D backdropTex : register(t0);
+SamplerState backdropSampler : register(s0);
+float backdropMask(float2 uv)
+{
+    float2 rp = float2(uv.x, 1.0 - uv.y);
+    float2 hs = uBackdropRect.zw * 0.5 * uRes;
+    float2 q = (rp - uBackdropRect.xy) * uRes - hs;
+    float r = uBackdropRadius * uRes.y;
+    float2 e = abs(q) - hs + r;
+    float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r;
+    return 1.0 - smoothstep(-1.5, 1.5, d);
+}
+float3 backdropColor(float2 uv)
+{
+    float2 rp = float2(uv.x, 1.0 - uv.y);
+    float2 local = (rp - uBackdropRect.xy) / max(uBackdropRect.zw, float2(0.0001, 0.0001));
+    float boxAspect = uBackdropRect.z * uRes.x / max(uBackdropRect.w * uRes.y, 1.0);
+    float2 fit = boxAspect > uBackdropAspect ? float2(1.0, uBackdropAspect / boxAspect) : float2(boxAspect / uBackdropAspect, 1.0);
+    float2 b = 0.5 + (local - 0.5) * fit;
+    return backdropTex.SampleLevel(backdropSampler, b, 0).rgb;
+}
 float3 baseColor(float2 p, float aspect, float t, float bass, float mid, float level, float3 c1, float3 c2, float3 c3, float dc)
 {
     float flow = t * 0.045;
@@ -116,6 +138,7 @@ float4 PS(float4 pos : SV_Position) : SV_Target
     float4 layer = modeLayer(c);
     col = lerp(col, float3(0.025, 0.027, 0.045), clamp(layer.a, 0.0, 1.0) * uFade);
     col = screen(col, max(layer.rgb, 0.0) * uFade);
+    if (uBackdrop > 0.001) { float bm = backdropMask(uv) * uBackdrop; if (bm > 0.001) col = lerp(col, backdropColor(uv), bm); }
     float vig = smoothstep(1.35, 0.2, length((uv - float2(0.55, 0.5)) * float2(aspect * 0.72, 1.0)));
     col *= lerp(0.32, 1.0, vig) * (1.0 + bass * 0.08);
     col += (hash(frag + frac(t * 7.0)) - 0.5) * (2.0 / 255.0);

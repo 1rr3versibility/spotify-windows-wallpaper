@@ -202,6 +202,7 @@ namespace CapriDesktop
                         byte[] native = offscreen.Read();
                         double mean, p99; int max;
                         Compare(reference, native, out mean, out p99, out max);
+                        Save(native, width, height, Path.Combine(folder, mode.Key + "-" + si + ".png"));
                         bool ok = mean <= 1.0 && p99 <= 6;
                         report.AppendLine(mode.Key + "\t" + si + "\t" + mean.ToString("0.000", c) + "\t" + p99.ToString("0", c) + "\t" + max + "\t" + (ok ? "OK" : "DIFF"));
                         if (!ok)

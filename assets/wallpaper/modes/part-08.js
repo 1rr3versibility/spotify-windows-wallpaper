@@ -1,39 +1,43 @@
 (window.TaliaModes = window.TaliaModes || []).push(
   {
     id: "080-swell",
-    name: "Зыбь",
+    name: "Шёлковый блеск",
     glsl: `
+float m080_fold(vec2 p, float t) {
+  vec2 w = vec2(noise(p * 0.9 + vec2(t * 0.11, 3.7)), noise(p * 0.9 + vec2(7.3, -t * 0.09))) - 0.5;
+  vec2 q = p + w * 0.55;
+  float u = q.x * 0.82 + q.y * 0.57;
+  float v = q.y * 0.82 - q.x * 0.57;
+  float h = sin(u * 5.4 + t * 0.6 + sin(v * 1.7 - t * 0.35) * 1.3) * 0.55;
+  h += sin(u * 7.1 - t * 0.45 + v * 1.4 + w.x * 4.0) * 0.22;
+  h += sin(v * 2.3 + t * 0.3 + w.y * 3.0) * 0.18;
+  return h;
+}
+
 vec4 modeLayer(Ctx c) {
-  vec3 col = vec3(0.0);
-  float cover = 0.0;
-  float ha = c.t - c.hits.x;
-  float flare = ha >= 0.0 ? exp(-ha * 2.2) : 0.0;
-  for (int i = 0; i < 6; i++) {
-    float fi = float(i);
-    float depth = fi / 5.0;
-    float base = 0.5 - depth * 0.4;
-    float f = 2.2 - depth * 1.3;
-    float amp = (0.02 + depth * 0.07) * (0.75 + c.bass * 0.9 + flare * 0.4);
-    float x = c.p.x * f;
-    float n1 = noise(vec2(x + c.t * (0.1 + depth * 0.16) + fi * 11.3, fi * 4.7 + c.t * 0.03));
-    float n2 = noise(vec2(x * 2.7 - c.t * (0.07 + depth * 0.1) + fi * 3.1, fi * 9.1 + c.t * 0.02));
-    float h = n1 * 0.75 + n2 * 0.25;
-    float y = base + amp * (pow(h, 1.6) * 2.0 - 0.6);
-    float below = y - c.uv.y;
-    float body = smoothstep(-c.px * 1.5, c.px * 1.5, below);
-    vec3 tint = palette3(c.c1, c.c2, c.c3, fi * 0.17 + 0.05);
-    float bb = max(below, 0.0);
-    vec3 water = tint * (0.04 + 0.14 * exp(-bb * (30.0 - depth * 18.0))) * (0.6 + depth * 0.6);
-    float glint = pow(noise(vec2(c.p.x * (14.0 - depth * 8.0) + c.t * 0.3 + fi * 5.0, bb * (320.0 - depth * 180.0) + fi * 7.0)), 7.0) * exp(-bb * 14.0);
-    water += mix(tint, vec3(1.0), 0.5) * glint * (0.2 + c.high * 0.5);
-    col = mix(col, water, body);
-    float crestMask = smoothstep(0.35, 0.8, h);
-    float foam = line(below, 0.0025 + depth * 0.004) * crestMask;
-    float spray = line(below + 0.008 + depth * 0.01, 0.01 + depth * 0.012) * crestMask * smoothstep(0.4, 0.8, n2);
-    col += mix(tint, vec3(1.0), 0.6) * (foam + spray * (0.3 + c.high * 0.7)) * (0.18 + c.high * 0.3 + flare * 0.3) * (0.5 + depth * 0.6);
-    cover = max(cover, body);
-  }
-  return vec4(col, cover * 0.6);
+  float t = c.star * 0.08 + c.t * 0.05;
+  float e = 0.004;
+  float h0 = m080_fold(c.p, t);
+  float hx = m080_fold(c.p + vec2(e, 0.0), t);
+  float hy = m080_fold(c.p + vec2(0.0, e), t);
+  vec2 g = vec2(hx - h0, hy - h0) / e;
+  vec3 n = normalize(vec3(-g * 0.22, 1.0));
+  float la = t * 0.35;
+  vec3 L = normalize(vec3(cos(la) * 0.7, sin(la) * 0.5 + 0.3, 0.6));
+  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+  float diff = clamp(dot(n, L), 0.0, 1.0);
+  float nh = clamp(dot(n, H), 0.0, 1.0);
+  vec2 gd = g / max(length(g), 0.0001);
+  float aniso = 1.0 - abs(dot(gd, normalize(L.xy)));
+  float sheen = pow(nh, 14.0 - c.bass * 6.0) * (0.45 + aniso * 0.55);
+  float broad = pow(nh, 4.0);
+  float k = h0 * 0.35 + c.p.x * 0.12 + c.p.y * 0.18 + t * 0.05;
+  vec3 tint = palette3(c.c1, c.c2, c.c3, fract(k) );
+  vec3 col = tint * (0.02 + diff * diff * 0.16 + broad * 0.1) * (0.85 + c.level * 0.3);
+  col += mix(tint, vec3(1.0), 0.4) * sheen * (0.32 + c.bass * 0.45 + c.mid * 0.1);
+  col += vec3(1.0) * pow(nh, 60.0) * (0.04 + c.high * 0.12);
+  float a = 0.18 + (1.0 - diff) * 0.26;
+  return vec4(col, a);
 }
 `,
   },
@@ -107,55 +111,83 @@ vec4 modeLayer(Ctx c) {
   },
   {
     id: "083-storm",
-    name: "Гроза вдали",
+    name: "Плазменные разряды",
     glsl: `
-float m083_off(float y, float seed) {
-  return (noise(vec2(y * 9.0, seed * 13.0)) - 0.5) * 0.1 + (noise(vec2(y * 34.0, seed * 7.0)) - 0.5) * 0.025 + sin(y * 140.0 + seed * 5.0) * 0.003;
+float m083_h(float x) {
+  return fract(sin(x * 12.9898 + 4.1) * 43758.5453);
+}
+float m083_off(float s, float k, float tt) {
+  return (noise(vec2(s * 3.0 + tt, k)) - 0.5) * 0.24 + (noise(vec2(s * 9.0 - tt * 1.3, k + 5.0)) - 0.5) * 0.09 + (noise(vec2(s * 26.0 + tt * 0.7, k + 11.0)) - 0.5) * 0.03;
+}
+vec2 m083_bolt(vec2 p, vec2 a, vec2 b, float k, float tt, float w, float px) {
+  vec2 ab = b - a;
+  float len = max(length(ab), 0.001);
+  vec2 dir = ab / len;
+  vec2 n = vec2(-dir.y, dir.x);
+  vec2 q = p - a;
+  float s = dot(q, dir) / len;
+  float d = dot(q, n);
+  float env = smoothstep(0.0, 0.08, s) * smoothstep(1.0, 0.7, s);
+  float o = m083_off(s, k, tt) * len * w;
+  float dd = abs(d - o);
+  float core = line(dd, px * 1.2) * env;
+  float halo = exp(-dd * dd / 0.0018) * env;
+  return vec2(core, halo);
+}
+vec2 m083_pt(vec2 a, vec2 b, float s, float k, float tt, float w) {
+  vec2 ab = b - a;
+  float len = length(ab);
+  vec2 dir = ab / len;
+  return a + ab * s + vec2(-dir.y, dir.x) * m083_off(s, k, tt) * len * w;
 }
 vec4 modeLayer(Ctx c) {
-  float hz = 0.2;
-  float cl = fbm(vec2(c.p.x * 1.6 + c.t * 0.02, c.uv.y * 3.5 - c.t * 0.01));
-  float band = smoothstep(0.78, 0.48, c.uv.y) * smoothstep(hz - 0.02, hz + 0.12, c.uv.y);
-  float clouds = band * smoothstep(0.3, 0.7, cl);
-  float ground = smoothstep(hz + 0.004, hz - 0.004, c.uv.y);
-  vec3 col = mix(c.c3, c.c2, cl) * clouds * (0.05 + c.bass * 0.12);
-  col += c.c3 * line(c.uv.y - hz - 0.01, 0.03) * (0.04 + c.bass * 0.1);
-  vec3 flash = vec3(0.0);
+  vec3 col = vec3(0.0);
+  float glow = 0.0;
+  float tt = c.star * 0.12;
+  float haze = fbm(c.p * 1.4 + vec2(tt * 0.6, -tt * 0.4));
+  col += mix(c.c3, c.c2, haze) * smoothstep(0.35, 0.8, haze) * (0.05 + c.level * 0.06);
+  for (int j = 0; j < 2; j++) {
+    float fj = float(j);
+    vec2 a = vec2(-0.1, 0.25 + 0.5 * fj + 0.1 * sin(tt * 0.7 + fj * 2.0));
+    vec2 b = vec2(c.aspect + 0.1, 0.75 - 0.5 * fj + 0.1 * cos(tt * 0.6 + fj));
+    vec2 r = m083_bolt(c.p, a, b, 30.0 + fj * 7.0, tt * 1.5, 0.7, c.px);
+    float k = 0.1 + c.mid * 0.12;
+    vec3 tint = j == 0 ? c.c1 : c.c2;
+    col += mix(tint, vec3(1.0), 0.3) * (r.x * 0.35 + r.y * 0.12) * k * 2.0;
+    glow += r.y * k;
+  }
   for (int i = 0; i < 8; i++) {
     float age = c.t - uBeats[i];
-    if (age < 0.0 || age > 1.6) continue;
-    float seed = uBeats[i];
-    vec2 hs = hash2(vec2(seed, 1.7));
-    float x0 = c.aspect * (0.1 + 0.8 * hs.x);
-    float top = 0.6 + 0.12 * hs.y;
-    float yy = c.uv.y;
-    float fl = exp(-age * 4.5) + 0.45 * exp(-pow((age - 0.22) * 10.0, 2.0));
-    vec3 tint = mix(palette3(c.c1, c.c2, c.c3, fract(hs.x * 5.31 + hs.y * 2.17)), vec3(1.0), 0.5);
-    vec2 e = (c.p - vec2(x0, top - 0.06)) * vec2(0.8, 1.7);
-    float sky = exp(-dot(e, e) / 0.05) * (0.25 + clouds * 1.5) * (1.0 - ground);
-    flash += tint * sky * 0.28 * fl;
-    if (abs(c.p.x - x0) > 0.3) continue;
-    if (yy < hz - 0.12 || yy > top) continue;
-    float dx = abs(c.p.x - x0 - m083_off(yy, seed));
-    float span = step(hz, yy) * smoothstep(top, top - 0.04, yy);
-    float mid = mix(hz, top, 0.5 + 0.25 * fract(hs.y * 7.7));
-    float side = fract(hs.x * 13.1) < 0.5 ? -1.0 : 1.0;
-    float bx = x0 + (noise(vec2(mid * 9.0, seed * 13.0)) - 0.5) * 0.1 + (mid - yy) * side * 0.45 + sin(yy * 120.0 + seed) * 0.006;
-    float bspan = step(yy, mid) * smoothstep(mid - 0.15, mid - 0.04, yy);
-    float db = abs(c.p.x - bx);
-    float core = line(dx, 1.4 * c.px) * span + line(db, 1.0 * c.px) * bspan * 0.6;
-    float halo = exp(-dx * dx / 0.0012) * span + exp(-db * db / 0.0008) * bspan * 0.5;
-    float refl = ground * exp(-pow((c.p.x - x0) / 0.04, 2.0)) * smoothstep(hz - 0.12, hz, c.uv.y) * (0.5 + 0.5 * sin(c.uv.y * 900.0 + c.p.x * 40.0));
-    flash += tint * (core * 0.85 + halo * 0.18 + refl * 0.25) * fl;
+    if (age < 0.0 || age > 1.4) continue;
+    float sd = fract(uBeats[i] * 0.61803) * 9.0 + float(i) * 0.37;
+    float fl = smoothstep(0.0, 0.04, age) * exp(-age * 3.2);
+    vec2 ctr = vec2(c.aspect * (0.2 + 0.6 * m083_h(sd)), 0.25 + 0.5 * m083_h(sd + 1.3));
+    float ang = (m083_h(sd + 2.7) - 0.5) * 1.6;
+    vec2 dir = vec2(cos(ang), sin(ang));
+    float hl = 0.55 * c.aspect;
+    vec2 a = ctr - dir * hl;
+    vec2 b = ctr + dir * hl;
+    float k = 20.0 + sd * 3.0;
+    float bt = tt + age * 0.25;
+    vec2 r = m083_bolt(c.p, a, b, k, bt, 0.55, c.px);
+    for (int m = 0; m < 2; m++) {
+      float fm = float(m);
+      float s0 = 0.25 + 0.4 * m083_h(sd + 4.1 + fm * 1.7);
+      vec2 o = m083_pt(a, b, s0, k, bt, 0.55);
+      float ba = ang + (m083_h(sd + 5.3 + fm) < 0.5 ? -1.0 : 1.0) * (0.5 + 0.5 * m083_h(sd + 6.1 + fm));
+      vec2 e = o + vec2(cos(ba), sin(ba)) * (0.25 + 0.2 * m083_h(sd + 7.9 + fm));
+      vec2 rb = m083_bolt(c.p, o, e, k + 3.0 + fm * 4.0, bt, 0.7, c.px);
+      r += rb * 0.6;
+    }
+    vec3 tint = palette3(c.c1, c.c2, c.c3, m083_h(sd + 8.8));
+    float amp = fl * (0.7 + c.bass * 0.5);
+    col += mix(tint, vec3(1.0), 0.55) * r.x * amp;
+    col += tint * r.y * amp * 0.35;
+    vec2 g = c.p - ctr;
+    col += tint * exp(-dot(g, g) / 0.12) * amp * 0.06;
+    glow += (r.y * 0.6 + 0.15) * amp;
   }
-  col += flash;
-  vec2 rq = vec2((c.p.x + c.uv.y * 0.18) * 150.0, c.uv.y * 5.0 + c.t * 4.5);
-  float rid = floor(rq.x);
-  float rh = hash(vec2(rid, 3.0));
-  float seg = fract(rq.y + rh * 10.0);
-  float rain = step(0.72, rh) * smoothstep(0.0, 0.08, seg) * smoothstep(0.3, 0.08, seg) * line(fract(rq.x) - 0.5, 0.15);
-  col += mix(c.c2, vec3(1.0), 0.4) * rain * (0.03 + c.high * 0.12) * (1.0 - ground);
-  return vec4(col, clouds * 0.35 + ground * 0.35);
+  return vec4(col, clamp(0.12 + glow * 0.25, 0.0, 0.4));
 }
 `,
   },
@@ -212,83 +244,94 @@ vec4 modeLayer(Ctx c) {
   },
   {
     id: "085-polar",
-    name: "Полярная ночь",
+    name: "Призматическая дымка",
     glsl: `
+float m085_veil(float s, float w) {
+  float a = 0.5 + 0.5 * sin(s * 5.0 + w * 3.0);
+  float b = 0.5 + 0.5 * sin(s * 8.3 - w * 2.2 + 1.7);
+  float d = 0.5 + 0.5 * sin(s * 2.6 + w * 4.1 + 4.0);
+  return pow(a, 6.0) * 0.6 + pow(b, 8.0) * 0.35 + pow(d, 3.0) * 0.4;
+}
+
 vec4 modeLayer(Ctx c) {
-  float yr = 0.08 + fbm(vec2(c.p.x * 1.8, 7.0)) * 0.16;
-  float mount = smoothstep(yr + c.px, yr - c.px, c.uv.y);
-  vec3 col = vec3(0.0);
-  for (int k = 0; k < 2; k++) {
-    float fk = float(k);
-    vec2 g = c.p * (60.0 + fk * 45.0);
-    vec2 id = floor(g);
-    vec2 h = hash2(id + fk * 31.0);
-    vec2 f = fract(g) - 0.5 - (h - 0.5) * 0.7;
-    float tw = 0.4 + 0.6 * noise(vec2(c.star * 0.9 + h.y * 40.0, fk));
-    col += mix(palette3(c.c1, c.c2, c.c3, h.y), vec3(1.0), 0.6) * step(0.93, h.x) * exp(-dot(f, f) / 0.01) * tw * (0.3 + c.high * 0.6) * (1.0 - fk * 0.4);
-  }
-  float wf = fbm(vec2(c.p.x * 0.7 + c.t * 0.03, c.t * 0.02));
-  float yl = 0.48 + (wf - 0.5) * 0.6;
-  float above = c.uv.y - yl;
-  float ray = noise(vec2(c.p.x * 26.0 + wf * 8.0 + c.t * 0.25, c.t * 0.15));
-  ray = 0.3 + 0.7 * ray * ray;
-  float wave = 0.0;
+  vec2 dir = vec2(0.82, 0.57);
+  vec2 nrm = vec2(-dir.y, dir.x);
+  float tm = c.star * 0.06;
+  vec2 q = c.p * 1.2;
+  float w = fbm(q * 0.8 + vec2(tm, -tm * 0.7));
+  float w2 = fbm(q * 1.6 + vec2(-tm * 0.5, tm * 0.9) + w * 0.8);
+  float s = dot(c.p, dir) + (w - 0.5) * 0.4 - tm * 0.9;
+  float along = dot(c.p, nrm);
+  float split = 0.05 + 0.03 * sin(along * 1.7 + tm * 2.0) + c.level * 0.012;
+  float r = m085_veil(s - split, w2);
+  float g = m085_veil(s, w2);
+  float b = m085_veil(s + split, w2);
+  float haze = smoothstep(0.2, 0.75, w2) * 0.55 + 0.45;
+  float glow = 0.0;
   for (int i = 0; i < 8; i++) {
     float age = c.t - uBeats[i];
-    if (age < 0.0 || age > 8.0) continue;
-    float hx = c.aspect * hash(vec2(uBeats[i], 3.3));
-    float front = abs(c.p.x - hx) - age * 0.45;
-    wave += exp(-front * front / 0.012) * exp(-age * 0.45);
+    if (age < 0.0 || age > 6.0) continue;
+    glow += exp(-age * 0.9);
   }
-  float up = max(above, 0.0);
-  float curtain = smoothstep(-0.012, 0.006, above) * exp(-up * (5.5 - c.bass * 2.5)) * ray;
-  float edge = line(above, 0.01) * (0.5 + 0.5 * ray);
-  vec3 aur = mix(c.c2, c.c1, smoothstep(0.0, 0.2, up));
-  aur = mix(aur, c.c3, smoothstep(0.15, 0.45, up));
-  col += mix(aur, vec3(1.0), 0.1) * (curtain * (0.28 + c.level * 0.2 + wave * 0.3) + edge * (0.3 + c.high * 0.35 + wave * 0.4));
-  col *= 1.0 - mount;
-  col += aur * line(c.uv.y - yr, 1.5 * c.px) * 0.18 + c.c3 * 0.025 * mount;
-  return vec4(col, 0.2 + mount * 0.7);
+  glow = min(glow, 1.5);
+  vec3 col = c.c1 * r + c.c2 * g + c.c3 * b;
+  float white = smoothstep(0.55, 1.1, min(r, min(g, b)));
+  col = mix(col, vec3(1.0) * (r + g + b) / 3.0, white * 0.35);
+  float gain = 0.42 + c.level * 0.22 + c.bass * 0.1 + glow * 0.08;
+  col *= haze * gain;
+  float sheen = pow(max(g - 0.6, 0.0) * 2.5, 2.0) * (0.04 + c.high * 0.12);
+  col += mix(c.c2, vec3(1.0), 0.6) * sheen * haze;
+  float a = 0.14 + haze * (r + g + b) * 0.08;
+  return vec4(col, a);
 }
 `,
   },
   {
     id: "086-mist",
-    name: "Туман над водой",
+    name: "Жидкий хром",
     glsl: `
+float m086_h(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { v += a * noise(p); p = p * 1.97 + vec2(13.0, 7.0); a *= 0.5; }
+  return v / 0.875;
+}
 vec4 modeLayer(Ctx c) {
-  float hz = 0.4;
-  float fog = 0.0;
-  for (int k = 0; k < 3; k++) {
-    float fk = float(k);
-    float fy = hz + 0.015 + fk * 0.075;
-    float f = fbm(vec2(c.p.x * (1.0 + fk * 0.5) - c.t * (0.03 + fk * 0.015) + fk * 7.0, c.uv.y * 4.0 + fk * 3.0 + c.t * 0.01));
-    float band = exp(-pow((c.uv.y - fy) / (0.04 + fk * 0.035), 2.0));
-    fog += band * smoothstep(0.3 - c.bass * 0.1, 0.75, f) * (0.65 - fk * 0.15);
-  }
-  float under = smoothstep(hz + 0.003, hz - 0.003, c.uv.y);
-  float depth = max(hz - c.uv.y, 0.0);
-  float wy = 0.4 / (depth + 0.02);
-  float rip = noise(vec2(c.p.x * (3.0 + wy * 0.8) + c.t * 0.2, wy * 2.0 - c.t * 0.6));
-  float width = 0.025 + depth * 0.5 + c.bass * 0.03;
-  float path = exp(-pow((c.p.x - c.cc.x) / width, 2.0));
-  vec3 moon = mix(c.c1, vec3(1.0), 0.45);
-  vec3 col = moon * path * pow(rip, 4.0) * (0.35 + c.high * 0.6) * under;
-  col += c.c3 * 0.05 * under * smoothstep(0.0, 0.3, depth);
-  vec2 ctr = vec2(c.cc.x, hz - 0.13);
-  float e = length((c.p - ctr) * vec2(1.0, 4.0));
+  float s = c.star * 0.05;
+  vec2 q = c.p * 1.3;
+  vec2 w = vec2(fbm(q * 0.7 + vec2(s, -s * 0.6)), fbm(q * 0.7 + vec2(5.2 - s * 0.5, 1.3 + s * 0.4)));
+  vec2 r = q + (w - 0.5) * 1.6 + vec2(s * 0.3, s * 0.2);
+  float e = 0.006;
+  float h0 = m086_h(r);
+  float hx = m086_h(r + vec2(e, 0.0));
+  float hy = m086_h(r + vec2(0.0, e));
+  vec2 g = vec2(hx - h0, hy - h0) / e;
+  float amp = 0.55 + c.level * 0.25;
+  vec3 n = normalize(vec3(-g * amp, 1.0));
+  vec3 v = vec3(0.0, 0.0, -1.0);
+  vec3 rd = reflect(v, n);
+  float band = rd.x * 0.9 + rd.y * 1.3 + h0 * 0.8 + s * 0.15;
+  vec3 env = palette3(c.c1, c.c2, c.c3, band * 0.5);
+  float stripe = 0.5 + 0.5 * sin(band * 5.0);
+  stripe = smoothstep(0.3, 0.8, stripe);
+  vec3 chrome = mix(env * 0.35, mix(env, vec3(1.0), 0.35), stripe);
+  float pulse = 0.0;
   for (int i = 0; i < 8; i++) {
     float age = c.t - uBeats[i];
-    if (age < 0.0 || age > 12.0) continue;
-    float r = age * 0.22;
-    float fade = (1.0 - smoothstep(c.aspect * 0.5, c.aspect * 0.8, r)) * (0.45 + 0.55 * exp(-age * 0.35));
-    vec3 tint = palette3(c.c1, c.c2, c.c3, e * 0.5);
-    col += mix(tint, vec3(1.0), 0.2) * (ring(e, r, 0.012 + age * 0.003) + ring(e, r - 0.05, 0.01) * 0.4) * fade * under * (0.25 + c.bass * 0.25);
+    if (age < 0.0 || age > 4.0) continue;
+    pulse += exp(-age * 1.6) * smoothstep(0.0, 0.08, age);
   }
-  vec3 fogc = mix(c.c3, mix(c.c1, vec3(1.0), 0.35), smoothstep(0.2, 0.9, fog) * 0.6 + exp(-abs(c.p.x - c.cc.x) * 2.0) * 0.3);
-  col += fogc * fog * (0.22 + c.level * 0.12);
-  col += moon * line(c.uv.y - hz, 0.004) * 0.1 * (0.5 + path);
-  return vec4(col, fog * 0.2 + under * 0.35);
+  pulse = min(pulse, 1.2);
+  vec3 l1 = normalize(vec3(-0.5, 0.6, 0.65));
+  vec3 l2 = normalize(vec3(0.6, -0.3, 0.75));
+  float sp1 = pow(max(dot(rd, l1), 0.0), 36.0);
+  float sp2 = pow(max(dot(rd, l2), 0.0), 60.0);
+  float bend = clamp(length(g) * 0.35, 0.0, 1.0);
+  float glint = (sp1 + sp2 * 0.6) * (0.35 + bend * 0.9) * (0.6 + c.bass * 0.9 + pulse * 0.5);
+  float fres = pow(1.0 - n.z, 2.0);
+  vec3 col = chrome * (0.2 + c.level * 0.08 + pulse * 0.05);
+  col += mix(c.c1, vec3(1.0), 0.6) * glint;
+  col += mix(c.c2, vec3(1.0), 0.3) * fres * (0.25 + c.high * 0.3);
+  return vec4(col, 0.18 + fres * 0.15 + (1.0 - stripe) * 0.08);
 }
 `,
   },

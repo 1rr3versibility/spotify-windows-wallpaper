@@ -49,7 +49,9 @@ namespace CapriDesktop
         private static readonly object modesGate = new object();
         private static Dictionary<string, string> modes;
         private static string accentGlsl;
-        private float accent, accentGain = 1f, darkTarget, darkNow;
+        private float accent, accentGain = 1f, darkTarget, darkNow, backdropTarget, backdropNow;
+        private readonly float[] backdropBox = new float[5];
+        private byte[] coverPixels;
 
         private readonly IntPtr hwnd;
         private readonly int width, height;
@@ -133,6 +135,27 @@ namespace CapriDesktop
             }
         }
 
+        internal void SetBackdrop(float[] amount, string coverBase64)
+        {
+            byte[] pixels = null;
+            if (!string.IsNullOrEmpty(coverBase64))
+            {
+                byte[] rgba = Convert.FromBase64String(coverBase64);
+                if (rgba.Length != 512 * 512 * 4) throw new ArgumentException("Обложка для фона должна быть 512×512, пришло " + rgba.Length + " байт");
+                pixels = new byte[rgba.Length];
+                for (int i = 0; i < rgba.Length; i += 4) { pixels[i] = rgba[i + 2]; pixels[i + 1] = rgba[i + 1]; pixels[i + 2] = rgba[i]; pixels[i + 3] = 255; }
+            }
+            lock (gate)
+            {
+                if (amount != null && amount.Length == 6)
+                {
+                    backdropTarget = Math.Max(0f, Math.Min(1f, amount[0]));
+                    Array.Copy(amount, 1, backdropBox, 0, 5);
+                }
+                if (pixels != null) coverPixels = pixels;
+            }
+        }
+
         internal void SetPalette(float[] rgb, float[] coverCenter, string mode, float[] accentStyle, float[] dark)
         {
             lock (gate)
@@ -179,7 +202,8 @@ namespace CapriDesktop
             IntPtr device = IntPtr.Zero, context = IntPtr.Zero, dxgiDevice = IntPtr.Zero, adapter = IntPtr.Zero, factory = IntPtr.Zero;
             IntPtr swapChain = IntPtr.Zero, backBuffer = IntPtr.Zero, view = IntPtr.Zero;
             IntPtr composition = IntPtr.Zero, compTarget = IntPtr.Zero, visual = IntPtr.Zero, root = IntPtr.Zero;
-            IntPtr fallbackPixel = IntPtr.Zero, modePixel = IntPtr.Zero;
+            IntPtr fallbackPixel = IntPtr.Zero, modePixel = IntPtr.Zero, coverTexture = IntPtr.Zero, coverView = IntPtr.Zero;
+            bool coverReady = false;
             FxPipeline pipeline = null;
             NativeVideo video = null;
             Task<IntPtr> compiling = null;
@@ -234,7 +258,8 @@ namespace CapriDesktop
                 ComCall.Check(ComCall.Method<GetOutFn>(composition, 7)(composition, out root), "CreateVisual (корень)");
                 ComCall.Check(ComCall.Method<AddVisualFn>(root, 16)(root, visual, 0, IntPtr.Zero), "AddVisual (фон)");
                 ComCall.Check(ComCall.Method<SetPointerFn>(compTarget, 3)(compTarget, root), "SetRoot");
-                try { video = new NativeVideo(device, factory, composition, root, videoShown, videoFailed); }
+                coverTexture = pipeline.CreateTexture(512, 512, false, out coverView);
+                try { video = new NativeVideo(device, factory, composition, root, pipeline, videoShown, videoFailed); }
                 catch (Exception error)
                 {
                     Journal.Write("Видеообложка: слой", error);
@@ -316,8 +341,22 @@ namespace CapriDesktop
                         star = (star + dt * (1f + audio[3] * 1.8f)) % 100000f;
                         float fade = (float)Math.Min(1.0, (nowMs - modeAt) / 1500.0);
                         darkNow += (darkTarget - darkNow) * (1f - (float)Math.Exp(-dt / 0.5));
+                        backdropNow += (backdropTarget - backdropNow) * (1f - (float)Math.Exp(-dt / 0.04));
                         FxPipeline.Fill(data, width, height, Clock(), fade, star, accent, accentGain, darkNow, colors, center, hits, audio, beats);
+                        if (coverPixels != null)
+                        {
+                            pipeline.UploadTexture(coverTexture, coverPixels, 512);
+                            coverPixels = null;
+                            coverReady = true;
+                        }
                     }
+                    IntPtr backdropView = video != null ? video.SmallView : IntPtr.Zero;
+                    float backdropAspect = backdropView != IntPtr.Zero ? video.SmallAspect : 1f;
+                    if (backdropView == IntPtr.Zero && coverReady) backdropView = coverView;
+                    pipeline.BindBackdrop(backdropView);
+                    float[] box;
+                    lock (gate) box = (float[])backdropBox.Clone();
+                    pipeline.SetBackdrop(backdropView != IntPtr.Zero && box[2] > 0f ? backdropNow : 0f, backdropAspect, box);
                     pipeline.Draw(view, width, height, currentMode == FxShaders.Fallback || modePixel == IntPtr.Zero ? fallbackPixel : modePixel);
                     int hr = present(swapChain, (uint)interval, 0);
                     if (hr < 0) throw new InvalidOperationException("Present вернул 0x" + hr.ToString("X8"));
@@ -340,6 +379,8 @@ namespace CapriDesktop
                 if (video != null) { try { video.Dispose(); } catch (Exception error) { Journal.Write("Видеообложка: закрытие", error); } }
                 ComCall.Release(modePixel);
                 ComCall.Release(fallbackPixel);
+                ComCall.Release(coverView);
+                ComCall.Release(coverTexture);
                 if (pipeline != null) pipeline.Dispose();
                 foreach (IntPtr item in new[] { root, visual, compTarget, composition, view, backBuffer, swapChain, factory, adapter, dxgiDevice, context, device })
                     ComCall.Release(item);

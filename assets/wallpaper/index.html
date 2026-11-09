@@ -58,6 +58,10 @@
     <div class="tracks" id="queue-tracks"></div>
   </section>
 
+  <section class="view list-view" data-view="lyrics">
+    <div class="lyrics" id="lyrics"><div class="lyrics-track" id="lyrics-track"></div></div>
+  </section>
+
   <section class="view list-view" data-view="search">
     <button class="searchbar" id="searchbar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span id="search-text" class="placeholder">Что хочешь послушать?</span></button>
     <div class="scroller" id="search-results"></div>
@@ -86,6 +90,7 @@
       <div class="progress"><span id="elapsed">0:00</span><div class="track-bar" id="seek"><div class="fill" id="fill"></div><div class="knob" id="knob"></div><canvas id="stage-dancer"></canvas></div><span id="duration">0:00</span></div>
     </div>
     <div class="side">
+      <button class="lyrics-toggle" id="lyrics-toggle" title="Текст">Т</button>
       <button class="like small" id="like-small" title="Нравится"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-9.4-9.3C1.4 8 3.6 4.5 7.1 4.5c2 0 3.6 1.1 4.9 2.8 1.3-1.7 2.9-2.8 4.9-2.8 3.5 0 5.7 3.5 4.5 6.7-1.9 4.7-9.4 9.3-9.4 9.3z"/></svg></button>
       <svg class="vol-icon" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>
       <div class="track-bar volume" id="volume"><div class="fill" id="volume-fill"></div></div>

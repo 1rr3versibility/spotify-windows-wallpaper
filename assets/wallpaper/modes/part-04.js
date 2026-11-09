@@ -188,55 +188,63 @@ vec4 modeLayer(Ctx c) {
   },
   {
     id: "044-lasergrid",
-    name: "Лазерная сетка",
+    name: "Лазерные нити",
     glsl: `
 float m044_sq(float x) { return x * x; }
+vec3 m044_famColor(Ctx c, int k) {
+  vec3 base = k == 0 ? c.c1 : (k == 1 ? c.c2 : c.c3);
+  return mix(base, vec3(1.0), 0.3);
+}
 vec4 modeLayer(Ctx c) {
-  float h = 0.4;
+  vec2 C0 = vec2(0.5 * c.aspect, 0.5);
+  float T = c.star;
+  float L = 0.55 * c.aspect + 0.6;
   vec3 col = vec3(0.0);
-  float a = 0.0;
-  float cx = c.p.x - 0.5 * c.aspect;
-  if (c.uv.y < h) {
-    float dy = h - c.uv.y;
-    float depth = 0.22 / dy;
-    float wx = cx * depth;
-    float wz = depth + c.star * 0.35;
-    float dzdy = 0.22 / (dy * dy) * c.px;
-    float dxdy = depth * c.px;
-    float lx = abs(fract(wx * 2.0 + 0.5) - 0.5) * 0.5;
-    float lz = abs(fract(wz * 2.0 + 0.5) - 0.5) * 0.5;
-    float lineX = exp(-m044_sq(lx / (dxdy * 1.3))) + 0.25 * exp(-m044_sq(lx / (dxdy * 6.0)));
-    float lineZ = (exp(-m044_sq(lz / (dzdy * 1.3))) + 0.25 * exp(-m044_sq(lz / (dzdy * 6.0)))) * smoothstep(0.35, 0.05, dzdy);
-    lineX *= smoothstep(0.0, 0.03, dy);
-    float fog = exp(-depth * 0.09);
-    col += mix(c.c2, vec3(1.0), 0.2) * lineX * fog * (0.22 + c.bass * 0.25);
-    col += mix(c.c1, vec3(1.0), 0.2) * lineZ * fog * (0.22 + c.bass * 0.25);
-    for (int i = 0; i < 8; i++) {
-      float age = c.t - uBeats[i];
-      if (age < 0.0 || age > 5.0) continue;
-      float pd = 6.0 * exp(-age * 0.8);
-      float band = exp(-m044_sq((depth - pd) / (0.05 * pd + 0.02))) * exp(-age * 0.45);
-      vec3 tint = mix(palette3(c.c1, c.c2, c.c3, fract(uBeats[i] * 0.173)), vec3(1.0), 0.25);
-      col += tint * band * (0.12 + (lineX + lineZ) * 0.6) * fog;
+  float moire = 1.0;
+  float cover = 0.0;
+  for (int k = 0; k < 3; k++) {
+    float fk = float(k);
+    float spd = k == 0 ? 0.021 : (k == 1 ? -0.014 : 0.009);
+    float th = fk * 2.09 + 0.4 + T * spd;
+    vec2 C = C0 + vec2(noise(vec2(T * 0.03, fk * 7.1)) - 0.5, noise(vec2(fk * 3.3, T * 0.03)) - 0.5) * vec2(0.5 * c.aspect, 0.4);
+    vec2 q = c.p - C;
+    vec3 fcol = m044_famColor(c, k);
+    float gr = 0.5 + 0.5 * cos(dot(q, vec2(cos(th), sin(th))) * 70.0);
+    moire *= gr;
+    for (int j = 0; j < 5; j++) {
+      float fj = float(j);
+      float li = fk * 5.0 + fj;
+      float an = th + (fj - 2.0) * 0.045;
+      vec2 dir = vec2(cos(an), sin(an));
+      vec2 nrm = vec2(-dir.y, dir.x);
+      float off = (fj - 2.0) * 0.17 + (noise(vec2(T * 0.05, li * 1.7)) - 0.5) * 0.12;
+      float d = abs(dot(q, nrm) - off);
+      float s = dot(q, dir);
+      float core = exp(-m044_sq(d / (c.px * 1.1)));
+      float glow = exp(-m044_sq(d / (c.px * 6.0)));
+      float halo = exp(-m044_sq(d / 0.03));
+      float vr = 0.45 + 0.55 * noise(vec2(s * 1.3 + T * 0.08 * (fj - 2.0), li * 2.9));
+      float breathe = 0.7 + 0.3 * sin(T * 0.21 + li * 1.3);
+      float lineB = (core * 0.55 + glow * 0.16 + halo * 0.05) * vr * breathe;
+      float dirSign = fract(li * 0.618) > 0.5 ? 1.0 : -1.0;
+      float pulse = 0.0;
+      for (int i = 0; i < 4; i++) {
+        float age = c.t - uBeats[i];
+        if (age < 0.0 || age > 3.0) continue;
+        float sel = smoothstep(0.35, 0.6, fract(uBeats[i] * 0.618 + li * 0.377));
+        float s0 = dirSign * (-L + age * 1.25);
+        float bead = exp(-m044_sq((s - s0) / 0.07)) + 0.35 * exp(-m044_sq((s - s0 + dirSign * 0.15) / 0.18));
+        pulse += sel * bead * exp(-age * 0.7);
+      }
+      float pw = exp(-m044_sq(d / (c.px * 2.5))) + 0.3 * exp(-m044_sq(d / 0.012));
+      col += fcol * lineB * (0.65 + c.level * 0.5 + c.high * 0.25);
+      col += mix(fcol, vec3(1.0), 0.45) * pulse * pw * (0.8 + c.bass * 0.4);
+      cover += halo;
     }
-    a = 0.35 * smoothstep(0.0, 0.05, dy);
   }
-  float hy = c.uv.y - h;
-  col += mix(c.c3, vec3(1.0), 0.3) * (exp(-m044_sq(hy / 0.004)) * 0.45 + exp(-abs(hy) * 14.0) * 0.12) * (0.6 + c.bass * 0.8);
-  if (c.uv.y > h) {
-    vec2 V = vec2(0.5 * c.aspect, h);
-    vec2 d = c.p - V;
-    for (int i = 0; i < 5; i++) {
-      float fi = float(i);
-      float an = (noise(vec2(c.t * 0.12 + fi * 5.0, fi * 2.3)) - 0.5) * 2.6;
-      vec2 dir = vec2(sin(an), cos(an));
-      float al = dot(d, dir);
-      float pe = abs(dot(d, vec2(dir.y, -dir.x)));
-      float beam = (exp(-m044_sq(pe / (c.px * 1.4))) + 0.25 * exp(-m044_sq(pe / (c.px * 7.0)))) * step(0.0, al) * exp(-al * 1.4);
-      col += mix(palette3(c.c1, c.c2, c.c3, fi * 0.21 + 0.05), vec3(1.0), 0.3) * beam * (0.1 + c.high * 0.45);
-    }
-  }
-  return vec4(col, a);
+  vec3 mc = mix(c.c2, c.c3, 0.5 + 0.5 * sin(T * 0.05));
+  col += mc * smoothstep(0.35, 0.9, moire) * (0.05 + c.mid * 0.05);
+  return vec4(col, 0.12 + min(cover, 1.5) * 0.08);
 }
 `,
   },

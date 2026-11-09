@@ -6,7 +6,7 @@ namespace CapriDesktop
 {
     internal sealed class FxPipeline : IDisposable
     {
-        internal const int ConstantFloats = 48;
+        internal const int ConstantFloats = 56;
         private const uint CompileFlags = 1u << 15;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -107,6 +107,68 @@ namespace CapriDesktop
             draw(context, 3, 0);
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TextureDesc
+        {
+            public uint Width, Height, MipLevels, ArraySize;
+            public int Format;
+            public uint SampleCount, SampleQuality;
+            public int Usage;
+            public uint BindFlags, CpuAccessFlags, MiscFlags;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SamplerDesc
+        {
+            public int Filter, AddressU, AddressV, AddressW;
+            public float MipLodBias;
+            public uint MaxAnisotropy;
+            public int ComparisonFunc;
+            public float Border0, Border1, Border2, Border3, MinLod, MaxLod;
+        }
+
+        private delegate int CreateTextureFn(IntPtr self, ref TextureDesc desc, IntPtr initial, out IntPtr texture);
+        private delegate int CreateViewFn(IntPtr self, IntPtr resource, IntPtr desc, out IntPtr view);
+        private delegate int CreateSamplerFn(IntPtr self, ref SamplerDesc desc, out IntPtr sampler);
+        private delegate void SetResourcesFn(IntPtr self, uint start, uint count, ref IntPtr items);
+
+        private IntPtr sampler;
+
+        internal IntPtr CreateTexture(int width, int height, bool renderTarget, out IntPtr view)
+        {
+            var desc = new TextureDesc { Width = (uint)width, Height = (uint)height, MipLevels = 1, ArraySize = 1, Format = 87, SampleCount = 1, BindFlags = renderTarget ? 0x28u : 0x8u };
+            IntPtr texture;
+            ComCall.Check(ComCall.Method<CreateTextureFn>(device, 5)(device, ref desc, IntPtr.Zero, out texture), "CreateTexture2D");
+            ComCall.Check(ComCall.Method<CreateViewFn>(device, 7)(device, texture, IntPtr.Zero, out view), "CreateShaderResourceView");
+            return texture;
+        }
+
+        internal void UploadTexture(IntPtr texture, byte[] bgra, int width)
+        {
+            var held = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+            try { update(context, texture, 0, IntPtr.Zero, held.AddrOfPinnedObject(), (uint)(width * 4), 0); }
+            finally { held.Free(); }
+        }
+
+        internal void BindBackdrop(IntPtr view)
+        {
+            if (sampler == IntPtr.Zero)
+            {
+                var desc = new SamplerDesc { Filter = 0x15, AddressU = 3, AddressV = 3, AddressW = 3, MaxAnisotropy = 1, ComparisonFunc = 1, MaxLod = float.MaxValue };
+                ComCall.Check(ComCall.Method<CreateSamplerFn>(device, 23)(device, ref desc, out sampler), "CreateSamplerState");
+            }
+            IntPtr resource = view, filter = sampler;
+            ComCall.Method<SetResourcesFn>(context, 8)(context, 0, 1, ref resource);
+            ComCall.Method<SetResourcesFn>(context, 10)(context, 0, 1, ref filter);
+        }
+
+        internal void SetBackdrop(float amount, float aspect, float[] box)
+        {
+            data[11] = amount;
+            data[15] = aspect;
+            Array.Copy(box, 0, data, 48, 5);
+        }
+
         internal static void Fill(float[] d, int width, int height, float time, float fade, float star, float accent, float accentGain, float dark, float[] colors, float[] center, float[] hits, float[] audio, float[] beats)
         {
             Array.Clear(d, 0, d.Length);
@@ -125,6 +187,7 @@ namespace CapriDesktop
         public void Dispose()
         {
             if (pin.IsAllocated) pin.Free();
+            ComCall.Release(sampler);
             ComCall.Release(constants);
             ComCall.Release(vertex);
         }

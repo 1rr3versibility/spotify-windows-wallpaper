@@ -51,7 +51,7 @@ namespace CapriDesktop
         private static readonly HashSet<string> BridgeOps = new HashSet<string>
         {
             "play", "pause", "next", "previous", "seek", "volume", "shuffle", "repeat", "dj", "liked-play", "contains", "like", "unlike",
-            "enqueue", "queue", "playlists", "playlist", "liked", "search", "search-tracks", "artist", "artist-albums", "album", "mixes"
+            "enqueue", "queue", "playlists", "playlist", "liked", "search", "search-tracks", "artist", "artist-albums", "album", "mixes", "lyrics"
         };
 
         internal Wallpaper(string pagesFolder, string dataFolder, Func<string> character, Screen screen, float scale, int fps)
@@ -250,6 +250,11 @@ namespace CapriDesktop
                     nativeFx.SetPalette(Floats(fields, "colors"), Floats(fields, "center"), modeId as string, Floats(fields, "accent"), Floats(fields, "dark"));
                     fields.TryGetValue("video", out videoUrl);
                     nativeFx.SetVideo(videoUrl as string, Floats(fields, "rect"));
+                    object cover;
+                    fields.TryGetValue("cover", out cover);
+                    try { nativeFx.SetBackdrop(Floats(fields, "backdrop"), cover as string); }
+                    catch (FormatException error) { Journal.Write("Обложка для размытого фона", error); }
+                    catch (ArgumentException error) { Journal.Write("Обложка для размытого фона", error); }
                 }
                 return;
             }
@@ -383,7 +388,7 @@ namespace CapriDesktop
                 if (!BridgeOps.Contains(op)) return new Reply { Status = 400, Body = "{\"error\":\"unknown op\"}" };
                 var args = new Dictionary<string, object>(a);
                 if (op == "play" && args.Count == 0) op = "resume";
-                bool slow = op == "search" || op == "artist" || op == "album" || op == "playlists" || op == "liked" || op == "playlist" || op == "mixes";
+                bool slow = op == "search" || op == "artist" || op == "album" || op == "playlists" || op == "liked" || op == "playlist" || op == "mixes" || op == "lyrics";
                 string body = bridge.CallSync(op, args, slow ? 15000 : 8000);
                 if (Mutating.Contains(op)) Interlocked.Exchange(ref liveStateUntil, DateTime.UtcNow.AddSeconds(4).Ticks);
                 return new Reply { Status = 200, Body = body };

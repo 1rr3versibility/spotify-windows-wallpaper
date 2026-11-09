@@ -4,7 +4,9 @@ const FxShader = {
   header: `
 precision highp float;
 uniform vec2 uRes;
-uniform float uTime, uFade, uStar, uAccent, uAccentGain, uDark;
+uniform float uTime, uFade, uStar, uAccent, uAccentGain, uDark, uBackdrop, uBackdropAspect, uBackdropRadius;
+uniform vec4 uBackdropRect;
+uniform sampler2D uBackdropTex;
 uniform vec3 uC1, uC2, uC3, uCenter, uHits;
 uniform vec4 uAudio;
 uniform float uBeats[16];
@@ -54,6 +56,23 @@ vec3 palette3(vec3 a, vec3 b, vec3 c, float x) {
   x = fract(x) * 3.0;
   return x < 1.0 ? mix(a, b, smoothstep(0.0, 1.0, x)) : (x < 2.0 ? mix(b, c, smoothstep(1.0, 2.0, x)) : mix(c, a, smoothstep(2.0, 3.0, x)));
 }
+float backdropMask(vec2 uv) {
+  vec2 rp = vec2(uv.x, 1.0 - uv.y);
+  vec2 hs = uBackdropRect.zw * 0.5 * uRes;
+  vec2 q = (rp - uBackdropRect.xy) * uRes - hs;
+  float r = uBackdropRadius * uRes.y;
+  vec2 e = abs(q) - hs + r;
+  float d = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r;
+  return 1.0 - smoothstep(-1.5, 1.5, d);
+}
+vec3 backdropColor(vec2 uv) {
+  vec2 rp = vec2(uv.x, 1.0 - uv.y);
+  vec2 local = (rp - uBackdropRect.xy) / max(uBackdropRect.zw, vec2(0.0001));
+  float boxAspect = uBackdropRect.z * uRes.x / max(uBackdropRect.w * uRes.y, 1.0);
+  vec2 fit = boxAspect > uBackdropAspect ? vec2(1.0, uBackdropAspect / boxAspect) : vec2(boxAspect / uBackdropAspect, 1.0);
+  vec2 b = 0.5 + (local - 0.5) * fit;
+  return texture2D(uBackdropTex, b).rgb;
+}
 `,
   main: `
 void main() {
@@ -88,6 +107,7 @@ void main() {
   vec4 layer = modeLayer(c);
   col = mix(col, vec3(0.025, 0.027, 0.045), clamp(layer.a, 0.0, 1.0) * uFade);
   col = screen(col, max(layer.rgb, 0.0) * uFade);
+  if (uBackdrop > 0.001) { float bm = backdropMask(uv) * uBackdrop; if (bm > 0.001) col = mix(col, backdropColor(uv), bm); }
   float vig = smoothstep(1.35, 0.2, length((uv - vec2(0.55, 0.5)) * vec2(aspect * 0.72, 1.0)));
   col *= mix(0.32, 1.0, vig) * (1.0 + bass * 0.08);
   col += (hash(gl_FragCoord.xy + fract(t * 7.0)) - 0.5) * (2.0 / 255.0);
@@ -95,7 +115,7 @@ void main() {
 }
 `,
   vertex: `attribute vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }`,
-  uniforms: ["uRes", "uTime", "uFade", "uStar", "uAccent", "uAccentGain", "uDark", "uC1", "uC2", "uC3", "uCenter", "uHits", "uAudio", "uBeats[0]"],
+  uniforms: ["uRes", "uTime", "uFade", "uStar", "uAccent", "uAccentGain", "uDark", "uBackdrop", "uBackdropAspect", "uBackdropRadius", "uBackdropRect", "uBackdropTex", "uC1", "uC2", "uC3", "uCenter", "uHits", "uAudio", "uBeats[0]"],
 };
 
 function fxModes() {
@@ -149,6 +169,14 @@ function fxDraw(gl, compiled, values) {
   gl.uniform1f(u.uAccent, values.accent || 0);
   gl.uniform1f(u.uAccentGain, values.accentGain == null ? 1 : values.accentGain);
   gl.uniform1f(u.uDark, values.dark || 0);
+  gl.uniform1f(u.uBackdrop, values.backdropTex && values.backdropBox && values.backdropBox[2] > 0 ? values.backdrop || 0 : 0);
+  gl.uniform1f(u.uBackdropAspect, values.backdropAspect || 1);
+  const box = values.backdropBox || [0, 0, 0, 0, 0];
+  gl.uniform4f(u.uBackdropRect, box[0], box[1], box[2], box[3]);
+  gl.uniform1f(u.uBackdropRadius, box[4]);
+  gl.uniform1i(u.uBackdropTex, 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, values.backdropTex || null);
   gl.uniform3fv(u.uC1, values.colors[0]);
   gl.uniform3fv(u.uC2, values.colors[1]);
   gl.uniform3fv(u.uC3, values.colors[2]);

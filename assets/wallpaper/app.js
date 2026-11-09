@@ -189,6 +189,7 @@ function render() {
     Fx.onTrack(item.uri);
     checkLiked();
     if (state.view === "queue") loadQueue();
+    if (state.view === "lyrics") Lyrics.show();
   }
   tick();
 }
@@ -394,6 +395,11 @@ function palette(img) {
   const shades = [[18, 0.09], [-18, -0.07]];
   for (let i = 0; lifted.length < 3; i++) lifted.push(shade(base, shades[i][0], shades[i][1]));
   lifted.dark = black / (size * size);
+  const thumb = document.createElement("canvas");
+  thumb.width = thumb.height = 512;
+  const tg = thumb.getContext("2d", { willReadFrequently: true });
+  tg.drawImage(img, 0, 0, 512, 512);
+  lifted.backdrop = tg.getImageData(0, 0, 512, 512).data;
   return lifted;
 }
 
@@ -431,6 +437,7 @@ function fromText(text) {
 }
 function applyPalette(colors) {
   Fx.darkTarget = colors.dark || 0;
+  if (colors.backdrop) Fx.setBackdropPixels(colors.backdrop);
   const root = document.documentElement.style;
   colors.forEach((c, i) => root.setProperty("--c" + (i + 1), "rgb(" + c.join(" ") + ")"));
 }
@@ -465,11 +472,13 @@ function toggleLike() {
 function showView(name) {
   if (name !== "detail") { state.tab = name; Detail.stack = []; }
   state.view = name;
+  $("lyrics-toggle").classList.toggle("on", name === "lyrics");
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.dataset.view === name));
   if (name === "playlists" && !state.openPlaylist) { if (!$("playlist-grid").children.length) loadPlaylists(true); else loadMixes(); }
   if (name === "liked" && !$("liked-tracks").children.length) loadLiked(true);
   if (name === "queue") loadQueue();
+  if (name === "lyrics") Lyrics.show();
 }
 
 let playlistsBusy = false;
@@ -697,6 +706,7 @@ function wire() {
   };
   $("like").onclick = toggleLike;
   $("like-small").onclick = toggleLike;
+  $("lyrics-toggle").onclick = () => showView(state.view === "lyrics" ? "now" : "lyrics");
   $("dj").onclick = () => act("dj", {}, (reply) => { if (reply && reply.status < 300) toast("Включаю DJ"); });
   $("liked-play").onclick = () => act("liked-play", {});
   $("searchbar").onclick = () => Search.open();
@@ -1115,6 +1125,39 @@ const Fx = {
     if (box && box.width) this.center = [(box.left + box.width / 2) / innerWidth, 1 - (box.top + box.height / 2) / innerHeight, box.width / 2 / innerHeight];
   },
   native: false,
+  backdrop: 0,
+  backdropPixels: null,
+  backdropKey: 0,
+  backdropSentKey: 0,
+  backdropTex: null,
+  backdropBox: [0, 0, 0, 0, 0],
+  readBackdropBox() {
+    if (state.view !== "now") return;
+    const wrap = $("cover").parentElement;
+    if (!wrap.offsetParent) return;
+    const box = wrap.getBoundingClientRect();
+    const w = window.innerWidth, h = window.innerHeight;
+    if (!box.width || !box.height || !w || !h) return;
+    this.backdropBox = [box.left / w, box.top / h, box.width / w, box.height / h, 22 / h].map((v) => Math.round(v * 10000) / 10000);
+    const side = Math.round(box.width) + "px";
+    if (side !== this.backdropSide) { this.backdropSide = side; document.documentElement.style.setProperty("--cover-side", side); }
+  },
+  setBackdropPixels(pixels) {
+    this.backdropPixels = pixels;
+    this.backdropKey++;
+    const gl = this.gl;
+    if (!gl || this.native) return;
+    if (!this.backdropTex) {
+      this.backdropTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.backdropTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, this.backdropTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(pixels.buffer));
+  },
   dark: 0,
   darkTarget: 0,
   darkAt: 0,
@@ -1127,7 +1170,14 @@ const Fx = {
     this.sentAt = now;
     this.readColors(now);
     this.readCenter(now);
-    const payload = { colors: [].concat(...this.colors), center: this.center, mode: this.mode, accent: [this.accent, this.accentGain], dark: [this.darkTarget], video: NativeCanvas.url, rect: coverRect() };
+    this.readBackdropBox();
+    const payload = { colors: [].concat(...this.colors), center: this.center, mode: this.mode, accent: [this.accent, this.accentGain], dark: [this.darkTarget], backdrop: [state.view === "now" ? 0 : 1].concat(this.backdropBox), video: NativeCanvas.url, rect: coverRect() };
+    if (this.backdropPixels && this.backdropKey !== this.backdropSentKey) {
+      let bytes = "";
+      for (let i = 0; i < this.backdropPixels.length; i += 8192) bytes += String.fromCharCode.apply(null, this.backdropPixels.subarray(i, i + 8192));
+      payload.cover = btoa(bytes);
+      this.backdropSentKey = this.backdropKey;
+    }
     const text = JSON.stringify(payload);
     if (text === this.sent || !bridge) return;
     this.sent = text;
@@ -1139,8 +1189,10 @@ const Fx = {
     const step = this.darkAt ? Math.min(0.1, (now - this.darkAt) / 1000) : 0;
     this.darkAt = now;
     this.dark += (this.darkTarget - this.dark) * (1 - Math.exp(-step / 0.5));
+    this.backdrop += ((state.view === "now" ? 0 : 1) - this.backdrop) * (1 - Math.exp(-step / 0.04));
     this.readColors(now);
     this.readCenter(now);
+    this.readBackdropBox();
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.lastFrame = now;
     this.starClock = ((this.starClock || Date.now() / 1000 % 100000) + dt * (1 + n.level * 1.8)) % 100000;
@@ -1153,12 +1205,81 @@ const Fx = {
       accent: this.accent,
       accentGain: this.accentGain,
       dark: this.dark,
+      backdrop: this.backdrop,
+      backdropTex: this.backdropTex,
+      backdropAspect: 1,
+      backdropBox: this.backdropBox,
       colors: this.colors,
       center: this.center,
       hits: this.hits,
       beats: this.beats,
       audio: [n.bass, n.mid, n.high, n.level],
     });
+  },
+};
+
+const Lyrics = {
+  uri: null,
+  lines: [],
+  synced: false,
+  nodes: [],
+  current: -2,
+  async show() {
+    const item = state.playback && state.playback.item;
+    const uri = item && item.uri;
+    if (!uri || uri === this.uri) return;
+    this.uri = uri;
+    this.lines = [];
+    this.nodes = [];
+    this.current = -2;
+    this.message("Загружаю текст…");
+    let reply;
+    try { reply = await call("lyrics", { uri }); }
+    catch (error) { if (this.uri === uri) this.message("Не удалось загрузить текст: " + error.message); return; }
+    if (this.uri !== uri) return;
+    if (reply.status !== 200 || !reply.data) return this.message("Не удалось загрузить текст (" + reply.status + ")");
+    const lines = (reply.data.lines || []).filter((line) => line.text.trim() || reply.data.synced);
+    if (!lines.length) return this.message("У Spotify нет текста для этого трека");
+    this.lines = lines;
+    this.synced = !!reply.data.synced;
+    const track = $("lyrics-track");
+    track.innerHTML = "";
+    track.style.transform = "";
+    $("lyrics").classList.toggle("unsynced", !this.synced);
+    this.nodes = lines.map((line) => {
+      const node = document.createElement("div");
+      node.className = "lyric" + (line.text.trim() ? "" : " gap");
+      node.textContent = line.text.trim() || "♪";
+      if (this.synced) node.onclick = () => act("seek", { ms: line.t });
+      track.appendChild(node);
+      return node;
+    });
+  },
+  message(text) {
+    $("lyrics").classList.add("unsynced");
+    $("lyrics-track").style.transform = "";
+    $("lyrics-track").innerHTML = "";
+    const node = document.createElement("div");
+    node.className = "lyrics-note";
+    node.textContent = text;
+    $("lyrics-track").appendChild(node);
+  },
+  frame() {
+    if (state.view !== "lyrics" || !this.synced || !this.nodes.length) return;
+    const p = state.playback;
+    if (!p || !p.item || p.item.uri !== this.uri) return;
+    const at = (p.progress_ms || 0) + (p.is_playing ? performance.now() - state.fetchedAt : 0) + 120;
+    let index = -1;
+    for (let i = 0; i < this.lines.length && this.lines[i].t <= at; i++) index = i;
+    if (index === this.current) return;
+    this.current = index;
+    this.nodes.forEach((node, i) => {
+      node.classList.toggle("current", i === index);
+      node.classList.toggle("past", i < index);
+    });
+    const box = $("lyrics"), focus = this.nodes[Math.max(0, index)];
+    const offset = focus.offsetTop + focus.offsetHeight / 2 - box.clientHeight * 0.4;
+    $("lyrics-track").style.transform = "translateY(" + (-Math.max(0, offset)) + "px)";
   },
 };
 
@@ -1351,6 +1472,7 @@ const Pulse = {
     if (!Fx.native) document.querySelector(".brand .pulse").style.scale = 1 + n.bass * .8;
     Fx.frame(n, clock);
     Stage.frame();
+    Lyrics.frame();
   },
 };
 

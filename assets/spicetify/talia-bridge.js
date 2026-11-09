@@ -331,6 +331,24 @@
         tracks: { total: (u.tracksV2 || u.tracks || {}).totalCount || items.length, items, next: null },
       };
     },
+    async lyrics(a) {
+      const parts = String(a.uri || "").split(":");
+      if (parts[1] !== "track" || !parts[2]) return { uri: a.uri, lines: [], synced: false };
+      let body;
+      try { body = await Spicetify.CosmosAsync.get("https://spclient.wg.spotify.com/color-lyrics/v2/track/" + parts[2] + "?format=json&vocalRemoval=false&market=from_token"); }
+      catch (error) {
+        if (/404/.test(String(error && (error.message || error.status) || error))) return { uri: a.uri, lines: [], synced: false };
+        throw error;
+      }
+      const lyrics = body && body.lyrics;
+      if (!lyrics || !Array.isArray(lyrics.lines)) return { uri: a.uri, lines: [], synced: false };
+      const synced = lyrics.syncType === "LINE_SYNCED" || lyrics.syncType === "SYLLABLE_SYNCED";
+      return {
+        uri: a.uri,
+        synced,
+        lines: lyrics.lines.map((line) => ({ t: Number(line.startTimeMs) || 0, text: line.words || "" })),
+      };
+    },
     async meta() {
       const data = Spicetify.Player.data || {};
       return { metadata: data.item && data.item.metadata || null, uri: data.item && data.item.uri };

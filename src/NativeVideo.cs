@@ -114,8 +114,16 @@ namespace CapriDesktop
         private float lastX = float.NaN, lastY, lastW, lastH, lastR;
         private bool engineRunning;
 
-        internal NativeVideo(IntPtr device, IntPtr factory, IntPtr composition, IntPtr parent, Action<string, int, int> shown, Action<string, string> failed)
+        private readonly FxPipeline pipeline;
+        private IntPtr smallTexture, smallView;
+        private int smallHeight;
+        internal IntPtr SmallView { get { return smallReady ? smallView : IntPtr.Zero; } }
+        internal float SmallAspect { get { return smallHeight > 0 ? 384f / smallHeight : 1f; } }
+        private bool smallReady;
+
+        internal NativeVideo(IntPtr device, IntPtr factory, IntPtr composition, IntPtr parent, FxPipeline pipeline, Action<string, int, int> shown, Action<string, string> failed)
         {
+            this.pipeline = pipeline;
             this.device = device;
             this.factory = factory;
             this.composition = composition;
@@ -192,6 +200,7 @@ namespace CapriDesktop
             {
                 requested = url;
                 presented = false;
+                smallReady = false;
                 commit |= Hide();
                 if (url == null)
                 {
@@ -245,14 +254,14 @@ namespace CapriDesktop
             }
 
             bool place = w >= 2f && h >= 2f;
-            if (!place) return commit | Hide();
-
             long time;
             if (ComCall.Method<TickFn>(engine, 44)(engine, out time) == 0)
             {
-                var target = new Rect { Right = videoWidth, Bottom = videoHeight };
                 var border = new Argb { Alpha = 255 };
-                if (ComCall.Method<TransferFn>(engine, 43)(engine, backBuffer, IntPtr.Zero, ref target, ref border) >= 0)
+                var small = new Rect { Right = 384, Bottom = smallHeight };
+                if (smallTexture != IntPtr.Zero && ComCall.Method<TransferFn>(engine, 43)(engine, smallTexture, IntPtr.Zero, ref small, ref border) >= 0) smallReady = true;
+                var target = new Rect { Right = videoWidth, Bottom = videoHeight };
+                if (place && ComCall.Method<TransferFn>(engine, 43)(engine, backBuffer, IntPtr.Zero, ref target, ref border) >= 0)
                 {
                     ComCall.Method<PresentFn>(swapChain, 8)(swapChain, 0, 0);
                     if (!presented)
@@ -262,6 +271,7 @@ namespace CapriDesktop
                     }
                 }
             }
+            if (!place) return commit | Hide();
             if (!presented) return commit;
 
             if (!visible)
@@ -309,6 +319,11 @@ namespace CapriDesktop
             ComCall.Check(ComCall.Method<CreateSwapChainFn>(factory, 24)(factory, device, ref desc, IntPtr.Zero, out swapChain), "CreateSwapChainForComposition (видео)");
             Guid id = Texture2DId;
             ComCall.Check(ComCall.Method<GetBufferFn>(swapChain, 9)(swapChain, 0, ref id, out backBuffer), "GetBuffer (видео)");
+            ComCall.Release(smallView);
+            ComCall.Release(smallTexture);
+            smallReady = false;
+            smallHeight = Math.Max(96, Math.Min(1536, (int)Math.Round(384.0 * videoHeight / videoWidth)));
+            smallTexture = pipeline.CreateTexture(384, smallHeight, true, out smallView);
         }
 
         public void Dispose()
@@ -319,6 +334,8 @@ namespace CapriDesktop
                 ComCall.Release(engine);
                 engine = IntPtr.Zero;
             }
+            ComCall.Release(smallView);
+            ComCall.Release(smallTexture);
             ComCall.Release(backBuffer);
             ComCall.Release(swapChain);
             ComCall.Release(clip);

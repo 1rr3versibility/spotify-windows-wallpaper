@@ -152,55 +152,47 @@ vec4 modeLayer(Ctx c) {
   },
   {
     id: "063-night-city",
-    name: "Ночной город",
+    name: "Восходящие шлейфы",
     glsl: `
+vec3 m063_layer(Ctx c, float k, float env) {
+  float cols = 24.0 + k * 18.0;
+  float sway = (noise(vec2(c.p.y * 0.7 + k * 4.0, c.t * 0.02 + k * 2.3)) - 0.5) * 0.06;
+  float x = (c.p.x + sway) * cols + k * 0.37;
+  float cid = floor(x);
+  float fx = (fract(x) - 0.5) / cols;
+  float h0 = hash(vec2(cid, k * 7.0 + 1.0));
+  float spd = (0.035 + 0.09 * hash(vec2(cid, k * 7.0 + 2.0))) * (1.0 - k * 0.25);
+  float L = 0.55 + 0.7 * hash(vec2(cid, k * 7.0 + 3.0));
+  float sy = (c.uv.y - c.star * spd) / L + hash(vec2(cid, k * 7.0 + 4.0));
+  float sid = mod(floor(sy), 37.0);
+  float fy = fract(sy);
+  float hs = hash(vec2(sid + k * 41.0, cid * 0.37));
+  float len = 0.3 + 0.55 * hash(vec2(sid + 5.1, cid + k));
+  float sv = fy / len;
+  float on = step(0.3, hs) * step(0.2, h0);
+  float body = sv * sv * smoothstep(0.0, 0.15, sv) * smoothstep(1.0, 0.985, sv) * on;
+  float head = line((sv - 1.0) * len * L, 0.01) * on;
+  float w = (1.2 - k * 0.25) * c.px;
+  float across = line(fx, w) + line(fx, w * 6.0) * 0.22;
+  vec3 tint = palette3(c.c1, c.c2, c.c3, h0 * 1.3 + k * 0.21 + c.uv.y * 0.18);
+  float bright = (0.22 + c.mid * 0.35 + c.high * 0.3 + env * 0.15) * (1.0 - k * 0.28);
+  return mix(tint, vec3(1.0), head * 0.5) * (body * across + head * line(fx, w * 2.2) * 0.9) * bright;
+}
 vec4 modeLayer(Ctx c) {
   float env = 0.0;
   for (int i = 0; i < 8; i++) {
     float age = c.t - uBeats[i];
-    if (age < 0.0 || age > 12.0) continue;
-    env += exp(-age * 1.6);
+    if (age < 0.0 || age > 10.0) continue;
+    env += exp(-age * 1.2);
   }
-  vec3 col = c.c3 * smoothstep(0.65, 0.1, c.uv.y) * 0.05;
-  for (int j = 0; j < 2; j++) {
-    float fj = float(j);
-    vec2 o = vec2(c.aspect * (0.22 + 0.56 * fj), 0.0);
-    float an = PI * 0.5 + (noise(vec2(c.t * 0.07, fj * 3.0)) - 0.5) * 1.3;
-    vec2 dir = vec2(cos(an), sin(an));
-    vec2 v = c.p - o;
-    float along = dot(v, dir);
-    float perp = abs(v.x * dir.y - v.y * dir.x);
-    col += mix(c.c2, vec3(1.0), 0.2) * line(perp, 0.006 + along * 0.05) * exp(-along * 1.3) * step(0.0, along) * (0.1 + env * 0.05 + c.mid * 0.06);
-  }
-  float a = 0.0;
+  env = min(env, 1.5);
+  vec3 col = vec3(0.0);
   for (int k = 0; k < 3; k++) {
-    float fk = float(k);
-    float bw = 0.028 + fk * 0.014;
-    float x = c.p.x + c.t * 0.003 * (fk + 1.0) + fk * 17.3;
-    float bx = floor(x / bw);
-    float lx = fract(x / bw);
-    float hb = hash(vec2(bx, fk + 1.0));
-    float h = (0.12 + 0.3 * hb * hb + 0.08 * hash(vec2(bx, fk + 9.0))) * (1.15 - fk * 0.3);
-    float top = h + step(0.25, lx) * step(lx, 0.75) * 0.03 * step(0.6, hash(vec2(bx, fk + 4.0)));
-    float inside = smoothstep(top + c.px, top - c.px, c.uv.y) * step(0.03, lx) * step(lx, 0.97);
-    vec2 wg = vec2(x / (bw / 6.0), c.uv.y / (0.012 + fk * 0.004));
-    vec2 wid = floor(wg);
-    vec2 wf = fract(wg);
-    float win = step(0.25, wf.x) * step(wf.x, 0.75) * step(0.3, wf.y) * step(wf.y, 0.75);
-    float wh = hash(wid + fk * 31.0);
-    float lit = step(0.62, hash(wid * 1.7 + floor(c.t * 0.04 + wh * 13.0)));
-    vec3 wt = palette3(c.c1, c.c2, c.c3, wh * 0.6 + hb);
-    vec3 lc = c.c1 * 0.012 + mix(wt, vec3(1.0), 0.3) * win * lit * (0.1 + fk * 0.06) * (0.6 + c.bass * 0.7) * step(c.uv.y, top - 0.012);
-    vec3 nt = palette3(c.c1, c.c2, c.c3, hash(vec2(bx, fk + 7.0)));
-    float neon = line(c.uv.y - top, (1.2 + fk * 0.4) * c.px) * step(0.55, hash(vec2(bx, fk + 6.0))) * step(0.05, lx) * step(lx, 0.95);
-    float neonGlow = line(c.uv.y - top, 0.006) * step(0.55, hash(vec2(bx, fk + 6.0))) * step(0.05, lx) * step(lx, 0.95) * 0.25;
-    float ant = line(length(vec2((lx - 0.5) * bw, c.uv.y - top - 0.015)), 2.2 * c.px) * step(0.75, hb) * (0.3 + c.high * 1.2) * (0.4 + 0.6 * noise(vec2(c.t * 1.5, bx)));
-    col = mix(col, lc, inside);
-    col += nt * (neon + neonGlow) * (0.35 + env * 0.45 * step(0.5, hash(vec2(bx, fk + 8.0)))) + mix(nt, vec3(1.0), 0.5) * ant;
-    a = max(a, inside * (0.4 + fk * 0.15));
+    col += m063_layer(c, float(k), env);
   }
-  col += mix(c.c1, c.c2, 0.5) * exp(-c.uv.y * 6.0) * 0.07 * (1.0 + c.bass);
-  return vec4(col, a);
+  float haze = noise(vec2(c.p.x * 2.5, c.p.y * 0.6 - c.star * 0.03));
+  col += mix(c.c1, c.c3, c.uv.y) * haze * haze * (0.03 + c.level * 0.04);
+  return vec4(col, 0.22);
 }
 `,
   },
@@ -262,50 +254,50 @@ vec4 modeLayer(Ctx c) {
   },
   {
     id: "065-neon-grid",
-    name: "Неоновая сетка",
+    name: "Неоновые петли",
     glsl: `
-vec4 modeLayer(Ctx c) {
-  float hz = 0.36;
-  float cx = 0.5 * c.aspect;
-  float dy = hz - c.uv.y;
-  vec3 col = vec3(0.0);
-  float a = 0.0;
-  if (dy > 0.0) {
-    float z = 0.11 / dy;
-    float gx = (c.p.x - cx) * z * 9.0;
-    float gz = z * 4.0 + c.star * 1.1;
-    float thick = 1.2 + c.bass * 0.9;
-    float wx = z * 9.0 * c.px * thick;
-    float wz = 0.44 / (dy * dy) * c.px * thick;
-    float ex = 0.5 - abs(fract(gx) - 0.5);
-    float ez = 0.5 - abs(fract(gz) - 0.5);
-    float lx = exp(-ex * ex / (wx * wx)) + 0.25 * exp(-ex * ex / (wx * wx * 16.0));
-    float lz = exp(-ez * ez / (wz * wz)) + 0.25 * exp(-ez * ez / (wz * wz * 16.0));
-    float fog = exp(-z * 0.35) * clamp(1.0 - max(wx, wz) * 2.5, 0.0, 1.0);
-    vec3 tint = palette3(c.c1, c.c2, c.c3, gx * 0.025 + 0.3);
-    col += tint * (lx + lz) * (0.26 + c.bass * 0.22) * fog;
-    col += mix(tint, vec3(1.0), 0.6) * lx * lz * c.high * 0.6 * fog;
-    for (int i = 0; i < 8; i++) {
-      float age = c.t - uBeats[i];
-      if (age < 0.0 || age > 6.0) continue;
-      float zb = 10.0 * exp(-age * 1.2);
-      float w = wz * 0.75 + 0.03 * z;
-      vec3 bt = palette3(c.c1, c.c2, c.c3, fract(uBeats[i] * 0.173));
-      col += mix(bt, vec3(1.0), 0.25) * exp(-pow((z - zb) / w, 2.0)) * 0.45 * clamp(1.0 - wz * 2.0, 0.0, 1.0);
-    }
-    col += mix(c.c1, c.c2, 0.5) * exp(-dy * 18.0) * 0.12;
-    a = 0.45 * smoothstep(0.0, 0.02, dy);
-  } else {
-    float mnt = hz + 0.1 * max(fbm(vec2(c.p.x * 2.2 + 3.0, 1.7)) - 0.32, 0.0) * (1.0 + c.bass * 0.4) + 0.012 * c.mid * noise(vec2(c.p.x * 9.0, 2.0));
-    float inside = step(c.uv.y, mnt);
-    col += c.c3 * line(c.uv.y - mnt, 1.4 * c.px) * 0.45 + c.c3 * inside * 0.015;
-    a = 0.5 * inside;
-    vec2 sg = c.p / 0.022;
-    vec2 sid = floor(sg);
-    float st = step(0.965, hash(sid)) * line(length(fract(sg) - 0.5) * 0.022, 1.3 * c.px);
-    col += mix(palette3(c.c1, c.c2, c.c3, hash(sid + 3.0)), vec3(1.0), 0.5) * st * (0.2 + c.high * 0.6) * (0.4 + 0.6 * noise(vec2(c.t * 0.8, hash(sid) * 50.0))) * (1.0 - inside) * smoothstep(hz, hz + 0.25, c.uv.y);
+float m065_flash(float t) {
+  float f = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float age = t - uBeats[i];
+    if (age >= 0.0 && age < 4.0) f += exp(-age * 2.6);
   }
-  col += mix(c.c1, c.c2, 0.4) * (line(dy, 0.0025) * 0.55 + line(dy, 0.035) * 0.14) * (0.8 + c.level * 0.5);
+  return min(f, 1.4);
+}
+
+vec4 modeLayer(Ctx c) {
+  float s = c.star;
+  float flash = m065_flash(c.t);
+  vec3 col = vec3(0.0);
+  float halo = 0.0;
+  for (int j = 0; j < 4; j++) {
+    float fj = float(j);
+    float dir = mod(fj, 2.0) * 2.0 - 1.0;
+    vec2 ctr = vec2(c.aspect * (0.5 + 0.3 * sin(s * 0.031 + fj * 1.9)), 0.5 + 0.17 * cos(s * 0.027 + fj * 2.6));
+    float R = 0.2 + 0.05 * fj + 0.03 * sin(s * 0.05 + fj);
+    float m = 2.0 + fj;
+    float n = m + 3.0;
+    float am = (0.16 + 0.1 * sin(s * 0.043 + fj * 1.3)) * (1.0 + c.bass * 0.25);
+    float bn = 0.07 * sin(s * 0.037 + fj * 2.1);
+    float ph = s * 0.06 * dir + fj;
+    float ps = -s * 0.045 * dir + fj * 2.0;
+    vec2 v = c.p - ctr;
+    float rho = length(v);
+    float th = atan(v.y, v.x);
+    float r = R * (1.0 + am * sin(m * th + ph) + bn * sin(n * th + ps));
+    float dr = R * (am * m * cos(m * th + ph) + bn * n * cos(n * th + ps));
+    float d = abs(rho - r) / sqrt(1.0 + (dr * dr) / max(rho * rho, R * R * 0.36));
+    float w = c.px * (1.3 + 0.6 * c.level + 0.8 * flash);
+    float core = exp(-d * d / (w * w));
+    float glow = exp(-d / (0.018 + 0.01 * c.bass + 0.01 * flash));
+    float run = pow(0.5 + 0.5 * cos(th - s * 0.35 * dir - fj * 1.7), 6.0);
+    vec3 tint = palette3(c.c1, c.c2, c.c3, th / TAU + fj * 0.31 + s * 0.012);
+    float b = (0.55 + 0.3 * c.level + 0.7 * flash) * (0.65 + 0.5 * run);
+    col += mix(tint, vec3(1.0), 0.45 + 0.2 * flash) * core * b * 0.8;
+    col += tint * glow * b * 0.28;
+    halo += glow;
+  }
+  float a = clamp(0.14 + halo * 0.12, 0.0, 0.38);
   return vec4(col, a);
 }
 `,
